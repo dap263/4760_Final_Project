@@ -112,7 +112,7 @@ unsigned char i2c_read(unsigned char target){
     RestartI2C1(); //Restart 
     IdleI2C1(); 
 
-    MasterWriteI2C1(KMX62_ADDR_W); //Send Device Address (Read)
+    MasterWriteI2C1(KMX62_ADDR_R); //Send Device Address (Read)
     IdleI2C1();
 
     while (I2C1STATbits.ACKSTAT); //wait for slave acknowledge
