@@ -25,6 +25,8 @@
 // need for sin function
 #include <math.h>
 
+#include "plib.h"
+
 ////////////////////////////////////
 
 /* Demo code for interfacing TFT (ILI9340 controller) to PIC32
@@ -57,7 +59,8 @@
 #define ACCEL_ZOUT_H 0x0F
 
 #define CNTL2 0x3A
-#define CNTL2_DATA 0b01001111  //enable all sensors and set acceleration range to +-2g
+//0D?
+#define CNTL2_DATA 0b00001111  //enable all sensors and set acceleration range to +-2g
 
 
 
@@ -93,7 +96,14 @@ void printLine2(int line_number, char* print_buffer, short text_color, short bac
     tft_writeString(print_buffer);
 }
 
-unsigned char i2c_read(unsigned char target){
+void i2c_wait(unsigned int cnt){
+    while(--cnt){
+        asm("nop");
+        asm("nop");
+    }
+}
+
+unsigned char i2c_read(char target){
     unsigned char data;
 
     StartI2C1(); //Send Start Condition
@@ -101,50 +111,48 @@ unsigned char i2c_read(unsigned char target){
 
     MasterWriteI2C1(KMX62_ADDR_W); //Send Device Address (Write)
     IdleI2C1(); 
-
     while (I2C1STATbits.ACKSTAT); //wait for slave acknowledge
 
     MasterWriteI2C1(target); //Send Register address the Master wants to read
     IdleI2C1(); 
-
     while (I2C1STATbits.ACKSTAT); //wait for slave acknowledge 
 
     RestartI2C1(); //Restart 
+    i2c_wait(10);
     IdleI2C1(); 
 
-    MasterWriteI2C1(KMX62_ADDR_W); //Send Device Address (Read)
+    MasterWriteI2C1(KMX62_ADDR_R); //Send Device Address (Read)
     IdleI2C1();
-
     while (I2C1STATbits.ACKSTAT); //wait for slave acknowledge
 
     data = MasterReadI2C1(); 
-
-    IdleI2C1(); 
+    IdleI2C1();  
+    NotAckI2C1();
+    
     StopI2C1();
     IdleI2C1();
     return data;
 }
 
-void i2c_write(unsigned char data,unsigned char target){
+void i2c_write(char data,char target){
     StartI2C1(); //Send Start Condition
     IdleI2C1(); 
 
     MasterWriteI2C1(KMX62_ADDR_W); //Send Device Address (Write)
     IdleI2C1(); 
-
     while (I2C1STATbits.ACKSTAT); //wait for slave acknowledge
 
     MasterWriteI2C1(target); //Send Register address the Master wants to write
-    IdleI2C1(); 
-
     while (I2C1STATbits.ACKSTAT); //wait for slave acknowledge 
+    IdleI2C1(); 
+   
     
     MasterWriteI2C1(data); //write data
     IdleI2C1();
-
     while (I2C1STATbits.ACKSTAT); //wait for slave acknowledge
-
+    
     StopI2C1();
+    IdleI2C1();
 }
 
 // Predefined colors definitions (from tft_master.h)
@@ -184,11 +192,11 @@ static PT_THREAD (protothread_timer(struct pt *pt))
         mPORTAToggleBits(BIT_0);
         
         //I2C Test
-        int xvalh = i2c_read(ACCEL_XOUT_H);
+        int control = i2c_read(CNTL2);
 
         // draw sys_time
         //sprintf(buffer,"Time=%d", sys_time_seconds);
-        sprintf(buffer, "X High=%d", xvalh);
+        sprintf(buffer, "control=%d", control);
         printLine2(0, buffer, ILI9340_BLACK, ILI9340_YELLOW);
         
         // NEVER exit while
@@ -212,7 +220,7 @@ void main(void) {
   // init the threads
   PT_INIT(&pt_timer);
   
-  OpenI2C1 (I2C_ON, 0xC2);
+  OpenI2C1 (I2C_ON, 0x0C2);
   IdleI2C1();
   
   i2c_write (CNTL2_DATA, CNTL2);
