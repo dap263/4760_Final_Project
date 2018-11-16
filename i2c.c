@@ -264,12 +264,21 @@ static PT_THREAD (protothread_timer(struct pt *pt))
         mPORTAToggleBits(BIT_0);
         
         //I2C Test
-        int Accel_X_avg = running_avg(getAccel_X(), Accel_X_buf, &Accel_X_index); 
-        int Accel_Z_avg = running_avg(getAccel_Z(), Accel_Z_buf, &Accel_Z_index);
-    
+        float Accel_X_avg = running_avg(getAccel_X(), Accel_X_buf, &Accel_X_index); 
+        float Accel_Z_avg = running_avg(getAccel_Z(), Accel_Z_buf, &Accel_Z_index);
+        float theta;
+        
+        //float num= Accel_Z_avg/Accel_X_avg;
+        if (Accel_X_avg==0){
+            theta=0;
+        }
+        else {
+            theta = atan(Accel_Z_avg/Accel_X_avg);
+        }
+        theta=(theta*57.3)+90;
         // draw sys_time
-        //sprintf(buffer,"Time=%d", sys_time_seconds);
-        sprintf(buffer, "X=%d", );
+        sprintf(buffer,"Time=%d", sys_time_seconds);
+        sprintf(buffer, "Theta=%.1f", theta );
         printLine2(0, buffer, ILI9340_BLACK, ILI9340_YELLOW);
         
         // NEVER exit while
