@@ -51,6 +51,7 @@
 //Important Addresses
 #define KMX62_ADDR_W 0x1C
 #define KMX62_ADDR_R 0x1D
+
 #define ACCEL_XOUT_L 0x0A
 #define ACCEL_XOUT_H 0x0B
 #define ACCEL_YOUT_L 0x0C
@@ -58,10 +59,33 @@
 #define ACCEL_ZOUT_L 0x0E
 #define ACCEL_ZOUT_H 0x0F
 
+#define MAG_XOUT_L 0x10
+#define MAG_XOUT_H 0x11
+#define MAG_YOUT_L 0x12
+#define MAG_YOUT_H 0x13
+#define MAG_ZOUT_L 0x14
+#define MAG_ZOUT_H 0x15
+
 #define CNTL2 0x3A
+
 //0D?
 #define CNTL2_DATA 0b00001111  //enable all sensors and set acceleration range to +-2g
 
+//Important variables
+ #define max_size 10
+ int Accel_X_buf[max_size];
+ int Accel_Y_buf[max_size];
+ int Accel_Z_buf[max_size];
+ int Mag_X_buf[max_size];
+ int Mag_Y_buf[max_size];
+ int Mag_Z_buf[max_size];
+
+ int Accel_X_index;
+ int Accel_Y_index;
+ int Accel_Z_index;
+ int Mag_X_index;
+ int Mag_Y_index;
+ int mag_Z_index;
 
 
 // === print a line on TFT =====================================================
@@ -103,8 +127,8 @@ void i2c_wait(unsigned int cnt){
     }
 }
 
-unsigned char i2c_read(char target){
-    unsigned char data;
+char i2c_read(char target){
+    char data;
 
     StartI2C1(); //Send Start Condition
     IdleI2C1(); 
@@ -155,6 +179,52 @@ void i2c_write(char data,char target){
     IdleI2C1();
 }
 
+int getAccel_X(){
+   int Accel_X= (int)(i2c_read(ACCEL_XOUT_H)<<8)+(i2c_read(ACCEL_XOUT_L));
+   return Accel_X;
+}
+
+int getAccel_Y(){
+   int Accel_Y= (int)(i2c_read(ACCEL_YOUT_H)<<8)+(i2c_read(ACCEL_YOUT_L));
+   return Accel_Y;
+}
+
+int getAccel_Z(){
+   int Accel_Z= (int)(i2c_read(ACCEL_ZOUT_H)<<8)+(i2c_read(ACCEL_ZOUT_L));
+   return Accel_Z;
+}
+
+int getMag_X(){
+   int Mag_X= (int)(i2c_read(MAG_XOUT_H)<<8)+(i2c_read(MAG_XOUT_L));
+   return Mag_X;
+}
+
+int getMag_Y(){
+   int Mag_Y= (int)(i2c_read(MAG_YOUT_H)<<8)+(i2c_read(MAG_YOUT_L));
+   return Mag_Y;
+}
+
+int getMag_Z(){
+   int Mag_Z= (int)(i2c_read(MAG_ZOUT_H)<<8)+(i2c_read(MAG_ZOUT_L));
+   return Mag_Z;
+}
+
+int running_avg(int val, int ring_buffer[], int *ring_index){
+    //scale values now to prevent overflow
+    ring_buffer[*ring_index]=val/max_size;
+    
+    //Update index
+    *ring_index=(*ring_index++)%max_size;
+    
+    //find the running avg
+    int sum;
+    int i;
+    for (i=0; i<max_size; i++){
+        sum=sum+ring_buffer[i];
+    }        
+    return sum;
+}
+
 // Predefined colors definitions (from tft_master.h)
 //#define	ILI9340_BLACK   0x0000
 //#define	ILI9340_BLUE    0x001F
@@ -179,6 +249,8 @@ int sys_time_seconds ;
 // update a 1 second tick counter
 static PT_THREAD (protothread_timer(struct pt *pt))
 {
+  
+    
     PT_BEGIN(pt);
      // set up LED to blink
      mPORTASetPinsDigitalOut(BIT_0 );    //Set port as output
@@ -186,17 +258,27 @@ static PT_THREAD (protothread_timer(struct pt *pt))
 
       while(1) {
         // yield time 1 second
-        PT_YIELD_TIME_msec(250) ;
+        PT_YIELD_TIME_msec(100) ;
         sys_time_seconds++ ;
         // toggle the LED on the big board
         mPORTAToggleBits(BIT_0);
         
         //I2C Test
-        int control = i2c_read(CNTL2);
-
+        float Accel_X_avg = running_avg(getAccel_X(), Accel_X_buf, &Accel_X_index); 
+        float Accel_Z_avg = running_avg(getAccel_Z(), Accel_Z_buf, &Accel_Z_index);
+        float theta;
+        
+        //float num= Accel_Z_avg/Accel_X_avg;
+        if (Accel_X_avg==0){
+            theta=0;
+        }
+        else {
+            theta = atan(Accel_Z_avg/Accel_X_avg);
+        }
+        theta=(theta*57.3)+90;
         // draw sys_time
-        //sprintf(buffer,"Time=%d", sys_time_seconds);
-        sprintf(buffer, "control=%d", control);
+        sprintf(buffer,"Time=%d", sys_time_seconds);
+        sprintf(buffer, "Theta=%.1f", theta );
         printLine2(0, buffer, ILI9340_BLACK, ILI9340_YELLOW);
         
         // NEVER exit while
@@ -208,8 +290,9 @@ static PT_THREAD (protothread_timer(struct pt *pt))
 void main(void) {
  //SYSTEMConfigPerformance(PBCLK);
  //I2C Setup
-  
     
+  //variables for running av
+
   ANSELA = 0; ANSELB = 0; 
    
   PT_setup();
@@ -220,9 +303,11 @@ void main(void) {
   // init the threads
   PT_INIT(&pt_timer);
   
+  //I2C
   OpenI2C1 (I2C_ON, 0x0C2);
   IdleI2C1();
   
+  //Set up KMX62
   i2c_write (CNTL2_DATA, CNTL2);
   
   
