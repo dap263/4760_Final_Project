@@ -26,6 +26,7 @@
 ////////////////////////////////////
 
 //#include "UART.h"
+#include "copied_uart.h"
 
 
 /* Demo code for interfacing TFT (ILI9340 controller) to PIC32
@@ -48,14 +49,16 @@
   MIT license, all text above must be included in any redistribution
  ****************************************************/
 
-#define use_uart_serial
-
 // A-channel, 1x, active
 #define DAC_config_chan_A 0b0011000000000000
 // B-channel, 1x, active
 #define DAC_config_chan_B 0b1011000000000000
 
 #define EnablePullUpA(bits) CNPDACLR=bits; CNPUASET=bits;
+
+#define RAD2DEG 57.295779513082320876798154814105
+#define DEG2RAD 0.01745329251994329576923690768489
+#define RAD2HOURANGLE 3.8197186342054880584532103209403
 
 
 // string buffer
@@ -64,40 +67,16 @@ char buffer[60];
 // === thread structures ============================================
 // thread control structs
 // note that UART input and output are threads
-static struct pt pt_calc, pt_timer, pt_adjust ;
+static struct pt pt_gps, pt_input;
 
 // system 1 second interval tick
 volatile int sys_time_seconds ;
-volatile int generate_period = 40000;
-volatile int pwm_on_time = 0;
-volatile int adc; // motor pot
-volatile int adc1;
-static const int horizontal = 287; // adc value at horizontal
-volatile int P = 125;
-static const int P_max = 400;
-_Accum I = 0.06;
-volatile int error_I = 0;
-static const _Accum I_max = 1;
-volatile int D = 23500;
-static const int D_max = 40000;
-volatile int target = 0;
-volatile int target_angle = 0;
-volatile int pid;
-volatile int error[20];
-volatile int error_ptr = 0;
-volatile int motor_disp = 0;
-volatile int adc_disp = 0;
-volatile int angle = 0;
-static const int target_max = 180;
-volatile int manual_target = 0;
-
-#define adc2angle (adc-horizontal)/3
-#define angle2adc (angle*3)+287
 
 // === print a line on TFT =====================================================
 // print a line on the TFT
 // string buffer
 char buffer[60];
+
 void printLine(int line_number, char* print_buffer, short text_color, short back_color){
     // line number 0 to 31 
     /// !!! assumes tft_setRotation(0);
@@ -112,186 +91,95 @@ void printLine(int line_number, char* print_buffer, short text_color, short back
     tft_writeString(print_buffer);
 }
 
-void __ISR(_TIMER_2_VECTOR, ipl2) Timer2Handler(void) {
-    
-    mT2ClearIntFlag();
-    adc = ReadADC10(1);
-    error[error_ptr] = target - adc;
-    //AcquireADC10();
-    error_I += (error[error_ptr]+ error[(error_ptr - 1) %20]) >> 1;
-    pid = I * error_I;
-    pid = pid + ((D*(error[error_ptr]-error[(error_ptr - 3) % 20])) >> 2);
-    pid = P*(error[error_ptr]) + pid;
-    if (pid > 40000)
-        pid = 40000;
-    else if (pid < 0){
-        pid = 0;
-        error_I = .997*error_I;
+// Floating point modulus: a mod b
+// Assumes b > 0
+float float_mod(float a, int b) {
+    while (a > b) {
+        a -= (float) b;
     }
-    pwm_on_time = pid;
-    SetDCOC3PWM(pwm_on_time);
-    error_ptr = (error_ptr + 1) % 20;
+    while (a < 0) {
+        a += (float) b;
+    }
+    return a;
 }
-    
-// === Timer Thread =================================================
-// update a 1 second tick counter
-static PT_THREAD (protothread_timer(struct pt *pt))
-{
-    PT_BEGIN(pt);
-     // set up LED to blink
-     //mPORTASetBits(BIT_0 );	//Clear bits to ensure light is off.
-     //mPORTASetPinsDigitalOut(BIT_0 );    //Set port as output
-      while(1) {
-        // yield time 1 second
-        PT_YIELD_TIME_msec(1000) ;
-        sys_time_seconds++ ;
-        // toggle the LED on the big board
-        //mPORTAToggleBits(BIT_0);
-        // draw sys_time
-        
-        sprintf(buffer,"%d", sys_time_seconds);
-        printLine(0, buffer, ILI9340_WHITE, ILI9340_BLACK);
-        if (!manual_target) {
-            if (sys_time_seconds == 5){
-                angle = 30;
-                target = angle2adc;
-            }
-            else if (sys_time_seconds == 10){
-                angle = -30;
-                target = angle2adc;
-            }
-            else if (sys_time_seconds == 15)
-                target = horizontal;
-            else if (sys_time_seconds == 20){
-                target = 0;
-                sys_time_seconds = 0;
-                PT_YIELD_TIME_msec(5000);
-                target = horizontal;
-                //error_I = 0;
-            }  
-        }
-        // NEVER exit while
-      } // END WHILE(1)
-  PT_END(pt);
-} // timer thread
 
-static PT_THREAD (protothread_calc(struct pt *pt))
+
+// Convert Altitude/Azimuth to Right Ascension/Declination
+// Formulas from comments by users Surveyor 1 and Ranger 4 on the web page:
+// https://www.cloudynights.com/topic/448682-help-w-conversion-of-altaz-to-radec-for-dsc/
+
+float RA; // Right Ascension
+float DEC; // Declination
+
+void AltAz2RaDec(int alt, int az, float lat, float lon, int hours, int min, int sec, int month, int day, int year) {
+    
+    // Calculating Julian Day
+    int A = year / 100;
+    int B = 2 - A + (int) (A/4);
+    int JD = (int) (365.25 * (year + 4716)) + (int) (30.6001 * (month + 1) + day + B - 1524.5);
+    
+    // Universal Time in hours
+    float UT = hours + ((float) min / 60) + ((float) sec / 3600); 
+    
+    // Days since Jan 1, 2000 at 1200 UT
+    // Split into 2 variables for greater precision
+    int epoch_days_whole = JD - 2451545;
+    float epoch_days_part = UT/24 - 0.5;
+    
+    float T = (float) epoch_days_whole/36525 + epoch_days_part/36525;
+    
+    // Siderial Time at Greenwich in degrees
+    // Split into 2 variables for greater precision then merged
+    float q0_whole = float_mod(280 + 360 * epoch_days_whole, 360); 
+    float q0_part = float_mod(0.46061837 + 0.98564736629 * (float) epoch_days_whole + 360.98564736629 * epoch_days_part + (0.000387933 * T * T) - ((T * T * T)/38710000),360);
+    float q0 = float_mod(q0_whole + q0_part, 360);
+    
+    // Local Siderial Time in degrees
+    float q = float_mod(q0 + lon, 360); 
+    
+    // Declination in degrees
+    DEC = asin(sin((float)alt*DEG2RAD)*sin(lat*DEG2RAD) + cos((float)alt*DEG2RAD)*cos(lat*DEG2RAD)*cos((float)az*DEG2RAD)) * RAD2DEG;
+    
+    // Hour angle in hours
+    float H = acos((sin((float)alt*DEG2RAD) - sin((float)lat*DEG2RAD)*sin(DEC*DEG2RAD))/(cos(lat*DEG2RAD)*cos(DEC*DEG2RAD))) * RAD2HOURANGLE;
+    
+    // Right ascension in hours
+    RA = q/15 - H;
+    
+}
+
+
+static PT_THREAD (protothread_GPS(struct pt *pt))
 {
   PT_BEGIN(pt);
   while (1) {
-    PT_GetMachineBuffer2(pt);
-    PT_YIELD_TIME_msec(1000);
-//    sscanf(PT_term_buffer2, "%x");
-    printLine(2, PT_term_buffer2, ILI9340_WHITE, ILI9340_BLACK);
-//    PT_YIELD_TIME_msec(1);
+    PT_SPAWN(pt, &pt_input, PT_GetSerialBufferGPS(&pt_input));
+//    printLine(1, PT_term_buffer_GPS_RMC, ILI9340_WHITE, ILI9340_BLACK);
+    // if received sentence is in GPRMC format
+    if (GPRMC == 1) {
+        GPRMC = 0; //reset GPRMC flag
+        parse_RMC(PT_term_buffer_GPS_RMC); //parse the GPRMC sentence
+        if (GPS_valid) {
+            sprintf(buffer, "Date: %d/%d/%d", GPS_month, GPS_day, GPS_year);
+            printLine(1, buffer, ILI9340_WHITE, ILI9340_BLACK);
+            sprintf(buffer, "Time: %d:%d:%d", GPS_time_h, GPS_time_m, GPS_time_s);
+            printLine(2, buffer, ILI9340_WHITE, ILI9340_BLACK);
+            AltAz2RaDec(90, 0, GPS_Lat, GPS_Lon, GPS_time_h, GPS_time_m, GPS_time_s, GPS_month, GPS_day, GPS_year);
+            sprintf(buffer, "RA: %.3f", RA);
+            printLine(3, buffer, ILI9340_WHITE, ILI9340_BLACK);
+            sprintf(buffer, "DEC: %.3f", DEC);
+            printLine(4, buffer, ILI9340_WHITE, ILI9340_BLACK);
+            sprintf(buffer, "Lat: %.6f", GPS_Lat);
+            printLine(5, buffer, ILI9340_WHITE, ILI9340_BLACK);
+            sprintf(buffer, "Lon: %.6f", GPS_Lon);
+            printLine(6, buffer, ILI9340_WHITE, ILI9340_BLACK);
+        } else {
+            printLine(10, "Not Valid", ILI9340_WHITE, ILI9340_BLACK);
+        }
+    } //end if
   }  
   PT_END(pt);
 } // timer thread
-
-static PT_THREAD (protothread_adjust(struct pt *pt))
-{
-    PT_BEGIN(pt);
-    while (1) {
-        // P TERM
-        PT_YIELD_TIME_msec(30);
-        PT_YIELD_UNTIL(&pt_adjust, !mPORTAReadBits(BIT_4)); // wait for right button push
-        //AcquireADC10();
-        PT_YIELD_TIME_msec(200);
-        sprintf(buffer,"Changing the P term to: ");
-        printLine(2, buffer, ILI9340_WHITE, ILI9340_BLACK);
-        int P_temp = P;
-        adc1 = ReadADC10(0);
-        //AcquireADC10();
-        while(mPORTAReadBits(BIT_4)){ // while left button not pushed
-            adc1 = ReadADC10(0);
-            P_temp = adc1*P_max>>10;
-            sprintf(buffer,"%d", P_temp);
-            printLine(3, buffer, ILI9340_WHITE, ILI9340_BLACK);
-            if (!mPORTAReadBits(BIT_3)) {
-                P = P_temp;
-                sprintf(buffer,"P term set to %d", P);
-                printLine(2, buffer, ILI9340_WHITE, ILI9340_BLACK);
-                PT_YIELD_TIME_msec(200);
-            }
-            PT_YIELD_TIME_msec(200);
-            // adjust P term
-        }
-        // D TERM
-        PT_YIELD_UNTIL(&pt_adjust, !mPORTAReadBits(BIT_4)); // wait for right button push
-        //AcquireADC10();
-        PT_YIELD_TIME_msec(200);
-        sprintf(buffer,"Changing the D term to: ");
-        int D_temp = D;
-        printLine(2, buffer, ILI9340_WHITE, ILI9340_BLACK);
-        //AcquireADC10();
-        while(mPORTAReadBits(BIT_4)){ // while left button not pushed
-            adc1 = ReadADC10(0);
-            D_temp = adc1*D_max>>10;
-            sprintf(buffer,"%d", D_temp);
-            printLine(3, buffer, ILI9340_WHITE, ILI9340_BLACK);
-            if (!mPORTAReadBits(BIT_3)) {
-                D = D_temp;
-                sprintf(buffer,"D term set to %d", D);
-                printLine(2, buffer, ILI9340_WHITE, ILI9340_BLACK);
-                PT_YIELD_TIME_msec(200);
-            }
-            PT_YIELD_TIME_msec(200);
-            // adjust P term
-        }
-        // I TERM
-        PT_YIELD_UNTIL(&pt_adjust, !mPORTAReadBits(BIT_4)); // wait for right button push
-        //AcquireADC10();
-        PT_YIELD_TIME_msec(200);
-        sprintf(buffer,"Changing the I term to: ");
-        _Accum I_temp = I;
-        printLine(2, buffer, ILI9340_WHITE, ILI9340_BLACK);
-        //AcquireADC10();
-        while(mPORTAReadBits(BIT_4)){ // while left button not pushed
-            adc1 = ReadADC10(0);
-            I_temp = (_Accum)(((_Accum)adc1)>>10);
-            sprintf(buffer,"%5.4f", (float) I_temp);
-            printLine(3, buffer, ILI9340_WHITE, ILI9340_BLACK);
-            if (!mPORTAReadBits(BIT_3)) {
-                I = I_temp;
-                sprintf(buffer,"I term set to %5.4f", (float) I);
-                printLine(2, buffer, ILI9340_WHITE, ILI9340_BLACK);
-                PT_YIELD_TIME_msec(200);
-            }
-            PT_YIELD_TIME_msec(200);
-            // adjust P term
-        }
-        // TARGET ANGLE
-        PT_YIELD_UNTIL(&pt_adjust, !mPORTAReadBits(BIT_4)); // wait for right button push
-        //AcquireADC10();
-        PT_YIELD_TIME_msec(200);
-        sprintf(buffer,"Changing the angle to: ");
-        int target_temp = target;
-        printLine(2, buffer, ILI9340_WHITE, ILI9340_BLACK);
-        //AcquireADC10();
-        while(mPORTAReadBits(BIT_4)){ // while left button not pushed
-            adc1 = ReadADC10(0);
-            target_temp = (adc1*target_max>>10) - 90;
-            sprintf(buffer,"%d", target_temp);
-            printLine(3, buffer, ILI9340_WHITE, ILI9340_BLACK);
-            if (!mPORTAReadBits(BIT_3)) {
-                angle = target_temp;
-                target = angle2adc;
-                if (target <= 20) {
-                    manual_target = 0;
-                    sys_time_seconds = 0;
-                } else {
-                    manual_target = 1;
-                }
-                sprintf(buffer,"Angle set to %d", target);
-                printLine(2, buffer, ILI9340_WHITE, ILI9340_BLACK);
-                PT_YIELD_TIME_msec(200);
-            }
-            PT_YIELD_TIME_msec(200);
-            // adjust P term
-        }
-    }
-    PT_END(pt);
-}
 
 // === Main  ======================================================
 void main(void) {
@@ -304,9 +192,7 @@ void main(void) {
   INTEnableSystemMultiVectoredInt();
 
   // init the threads
-  PT_INIT(&pt_calc);
-  PT_INIT(&pt_timer);
-  PT_INIT(&pt_adjust);
+  PT_INIT(&pt_gps);
 
   // init the display
   tft_init_hw();
@@ -317,7 +203,7 @@ void main(void) {
     
   // round-robin scheduler for threads
   while (1){
-      PT_SCHEDULE(protothread_calc(&pt_calc));
+      PT_SCHEDULE(protothread_GPS(&pt_gps));
       }
   } // main
 

@@ -602,7 +602,6 @@ do { static int i ; \
 
 //====================================================================
 //=== serial setup ===================================================
-//#ifdef use_uart_serial
 ///////////////////////////
 // UART parameters
 
@@ -613,7 +612,7 @@ do { static int i ; \
 #define pcr()    printf( '\r')
 #define crlf     putchar(0x0a); putchar(0x0d);
 #define backspace 0x7f // make sure your backspace matches this!
-#define max_chars 128 // for input/output buffer
+#define max_chars_GPS 128 // for input/output buffer
 // PuTTY serial terminal control codes
 // see 
 // http://ascii-table.com/ansi-escape-sequences-vt-100.php
@@ -626,64 +625,6 @@ do { static int i ; \
 #define red_text printf("\x1b[31m")
 #define rev_text printf("\x1b[7m")
 #define normal_text printf("\x1b[0m")
-//====================================================================
-// build a string from the UART2 /////////////
-// assuming that a HUMAN is typing at a terminal!
-//////////////////////////////////////////////
-char PT_term_buffer2[max_chars];
-int PT_GetSerialBuffer2(struct pt *pt)
-{
-    static char character;
-    static int num_char;
-    // mark the beginnning of the input thread
-    PT_BEGIN(pt);
-
-    num_char = 0;
-    // clear buffer
-    memset(PT_term_buffer2, 0, max_chars);
-
-    while(num_char < max_chars)
-    {
-        // get the character
-        // yield until there is a valid character so that other
-        // threads can execute
-        PT_YIELD_UNTIL(pt, UARTReceivedDataIsAvailable(UART2));
-       // while(!UARTReceivedDataIsAvailable(UART2)){};
-        character = UARTGetDataByte(UART2);
-        PT_YIELD_UNTIL(pt, UARTTransmitterIsReady(UART2));
-        UARTSendDataByte(UART2, character);
-
-        // unomment to check backspace character!!!
-        //printf("--%x--",character );
-
-        // end line
-        if(character == '\r'){
-            PT_term_buffer2[num_char] = 0; // zero terminate the string
-            //crlf; // send a new line
-            PT_YIELD_UNTIL(pt, UARTTransmitterIsReady(UART2));
-            UARTSendDataByte(UART2, '\n');
-            break;
-        }
-        // backspace
-        else if (character == backspace){
-            PT_YIELD_UNTIL(pt, UARTTransmitterIsReady(UART2));
-            UARTSendDataByte(UART2, ' ');
-            PT_YIELD_UNTIL(pt, UARTTransmitterIsReady(UART2));
-            UARTSendDataByte(UART2, backspace);
-            num_char--;
-            // check for buffer underflow
-            if (num_char<0) {num_char = 0 ;}
-        }
-        else  {PT_term_buffer2[num_char++] = character ;}
-         //if (character == backspace)
-
-    } //end while(num_char < max_size)
-    
-    // kill this input thread, to allow spawning thread to execute
-    PT_EXIT(pt);
-    // and indicate the end of the thread
-    PT_END(pt);
-}
 
 //====================================================================
 // build a string from the UART2 /////////////
@@ -692,13 +633,15 @@ int PT_GetSerialBuffer2(struct pt *pt)
 // !!! you MUST specify EITHER a termination character or a count!!
 //////////////////////////////////////////////
 // -- terminator character could be <enter> '\r'
-// or any other character, e.g. '#' or can be set to ZERO
+// or any other characcter, e.g. '#' or can be set to ZERO
 // if there is no termination character
 // -- Termination count will return after N characters, regardless of
 // the terminator character
 // Set to ZERO if there is no termination count.
 // -- Termination time is the longest the routine will wait 
 // for a terminator event in milliseconds
+#define max_chars_WiFi 256
+char PT_term_buffer_WiFi[max_chars_WiFi];
 char PT_terminate_char, PT_terminate_count ;
 // terminate time default million seconds
 int PT_terminate_time = 1000000000 ;
@@ -708,7 +651,7 @@ int PT_timeout = 0;
 // system time updated in TIMER5 ISR below
 volatile unsigned int time_tick_millsec ;
 
-int PT_GetMachineBuffer2(struct pt *pt)
+int PT_GetMachineBuffer(struct pt *pt)
 {
     static char character;
     static unsigned int num_char, start_time;
@@ -722,11 +665,9 @@ int PT_GetMachineBuffer2(struct pt *pt)
     // clear timeout flag
     PT_timeout = 0;
     // clear input buffer
-    memset(PT_term_buffer2, 0, max_chars);
+    memset(PT_term_buffer_WiFi, 0, max_chars_WiFi);
     
-    PT_terminate_char = '\n';
-    
-    while(num_char < max_chars)
+    while(num_char < max_chars_WiFi)
     {
         // get the character
         // yield until there is a valid character so that other
@@ -734,21 +675,21 @@ int PT_GetMachineBuffer2(struct pt *pt)
         PT_YIELD_UNTIL(pt, 
                 UARTReceivedDataIsAvailable(UART2) || 
                 ((PT_terminate_time>0) && (time_tick_millsec >= PT_terminate_time+start_time)));
-       // grab the character from the uart buffer
+       // grab the character from the UART buffer
         character = UARTGetDataByte(UART2);
         
         // Terminate on character match
         if ((character>0) && (character == PT_terminate_char)) {
-            PT_term_buffer2[num_char] = 0x58; // zero terminate the string
+            PT_term_buffer_WiFi[num_char] = 0; // zero terminate the string
             // and leave the while loop
             break;
         }    
-//         Terminate on count
+        // Terminate on count
         else if ( ((PT_terminate_count>0) && (num_char+1 >= PT_terminate_count))){
             // record the last character
-            PT_term_buffer2[num_char++] = character ; 
+            PT_term_buffer_WiFi[num_char++] = character ; 
             // and terminate
-            PT_term_buffer2[num_char] = 0; // zero terminate the string
+            PT_term_buffer_WiFi[num_char] = 0; // zero terminate the string
             // and leave the while loop
             break;
         }
@@ -757,13 +698,13 @@ int PT_GetMachineBuffer2(struct pt *pt)
             // set the timeout flag
             PT_timeout = 1;
             // clear (probably invalid) input buffer
-            memset(PT_term_buffer2, 0, max_chars);
+            memset(PT_term_buffer_WiFi, 0, max_chars_WiFi);
             // and  leave the while loop
             break ;
         }
         // continue recording input characters
         else {
-            PT_term_buffer2[num_char++] = character ;  
+            PT_term_buffer_WiFi[num_char++] = character ;  
         }
     } //end while(num_char < max_size)
     
@@ -775,15 +716,15 @@ int PT_GetMachineBuffer2(struct pt *pt)
 
 //====================================================================
 // === send a string to the UART2 ====================================
-char PT_send_buffer2[max_chars];
+char PT_send_buffer_WiFi[max_chars_WiFi];
 int num_send_chars ;
-int PutSerialBuffer2(struct pt *pt)
+int PutSerialBuffer(struct pt *pt)
 {
     PT_BEGIN(pt);
     num_send_chars = 0;
-    while (PT_send_buffer2[num_send_chars] != 0){
+    while (PT_send_buffer_WiFi[num_send_chars] != 0){
         PT_YIELD_UNTIL(pt, UARTTransmitterIsReady(UART2));
-        UARTSendDataByte(UART2, PT_send_buffer2[num_send_chars]);
+        UARTSendDataByte(UART2, PT_send_buffer_WiFi[num_send_chars]);
         num_send_chars++;
     }
     // kill this output thread, to allow spawning thread to execute
@@ -794,15 +735,15 @@ int PutSerialBuffer2(struct pt *pt)
 
 //====================================================================
 // === DMA send string to the UART2 ==================================
-int PT_DMA_PutSerialBuffer2(struct pt *pt)
+int PT_DMA_PutSerialBuffer(struct pt *pt)
 {
     PT_BEGIN(pt);
     //mPORTBSetBits(BIT_0);
     // check for null string
-    if (PT_send_buffer2[0]==0)PT_EXIT(pt);
+    if (PT_send_buffer_WiFi[0]==0)PT_EXIT(pt);
     // sent the first character
     PT_YIELD_UNTIL(pt, UARTTransmitterIsReady(UART2));
-    UARTSendDataByte(UART2, PT_send_buffer2[0]);
+    UARTSendDataByte(UART2, PT_send_buffer_WiFi[0]);
     //DmaChnStartTxfer(DMA_CHANNEL1, DMA_WAIT_NOT, 0);
     // start the DMA
     DmaChnEnable(DMA_CHANNEL1);
@@ -817,7 +758,6 @@ int PT_DMA_PutSerialBuffer2(struct pt *pt)
     // and indicate the end of the thread
     PT_END(pt);
 }
-//#endif //#ifdef use_uart_serial
 
 //======================================================================
 // vref confing (if used)
@@ -838,8 +778,6 @@ void __ISR(_TIMER_5_VECTOR, IPL2AUTO) Timer5Handler(void) //_TIMER_5_VECTOR
     //waste();
 }
 
-#define use_uart_serial
-
 void PT_setup (void)
 {
   // Configure the device for maximum performance but do not change the PBDIV
@@ -851,7 +789,6 @@ void PT_setup (void)
   ANSELA =0; //make sure analog is cleared
   ANSELB =0;
   
-#ifdef use_uart_serial
   // === init the uart2 ===================
  // SET UART i/o PINS
  // The RX pin must be one of the Group 2 input pins
@@ -892,12 +829,11 @@ void PT_setup (void)
   // trigger a byte everytime the UART is empty
   DmaChnSetEventControl(DMA_CHANNEL1, DMA_EV_START_IRQ_EN|DMA_EV_MATCH_EN|DMA_EV_START_IRQ(_UART2_TX_IRQ));
   // source and destination
-  DmaChnSetTxfer(DMA_CHANNEL1, PT_send_buffer2+1, (void*)&U2TXREG, max_chars, 1, 1);
+  DmaChnSetTxfer(DMA_CHANNEL1, PT_send_buffer_WiFi+1, (void*)&U2TXREG, max_chars_WiFi, 1, 1);
   // signal when done
   DmaChnSetEvEnableFlags(DMA_CHANNEL1, DMA_EV_BLOCK_DONE);
   // set null as ending character (of a string)
   DmaChnSetMatchPattern(DMA_CHANNEL1, 0x00);
-#endif //#ifdef use_uart_serial
   
   // ===Set up timer5 ======================
   // timer 5: on,  interrupts, internal clock, 
