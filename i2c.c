@@ -85,7 +85,7 @@
  int Accel_Z_index;
  int Mag_X_index;
  int Mag_Y_index;
- int mag_Z_index;
+ int Mag_Z_index;
 
 
 // === print a line on TFT =====================================================
@@ -266,19 +266,41 @@ static PT_THREAD (protothread_timer(struct pt *pt))
         //I2C Test
         float Accel_X_avg = running_avg(getAccel_X(), Accel_X_buf, &Accel_X_index); 
         float Accel_Z_avg = running_avg(getAccel_Z(), Accel_Z_buf, &Accel_Z_index);
+        float Accel_Y_avg = running_avg(getAccel_Y(), Accel_Y_buf, &Accel_Y_index);
+        float Mag_X_avg = running_avg(getMag_X(), Mag_X_buf, &Mag_X_index);
+        float Mag_Y_avg = running_avg(getMag_Y(), Mag_Y_buf, &Mag_Y_index);
+        float Mag_Z_avg = running_avg(getMag_Z(), Mag_Z_buf, &Mag_Z_index);
         float theta;
+        float heading;
         
-        //float num= Accel_Z_avg/Accel_X_avg;
-        if (Accel_X_avg==0){
-            theta=0;
+        
+        theta = atan(Accel_Y_avg/Accel_X_avg);
+        theta=90-(theta*57.3);
+        
+        if (Mag_X_avg==0 && Mag_Y_avg<0){
+            heading = 90;
         }
+        
+        else if (Mag_X_avg==0 && Mag_Y_avg>=0){
+            heading = 0;
+        }
+        
         else {
-            theta = atan(Accel_Z_avg/Accel_X_avg);
+            heading = atan(Mag_Y_avg/Mag_X_avg);
+            heading= (heading*57.3);
         }
-        theta=(theta*57.3)+90;
+        
+        if (heading >360){
+            heading = heading-360;
+        }
+        
+        else if (heading <0){
+            heading = heading+360;
+        }
+        
         // draw sys_time
         sprintf(buffer,"Time=%d", sys_time_seconds);
-        sprintf(buffer, "Theta=%.1f", theta );
+        sprintf(buffer, "heading=%.1f", heading);
         printLine2(0, buffer, ILI9340_BLACK, ILI9340_YELLOW);
         
         // NEVER exit while
