@@ -68,7 +68,6 @@
 
 #define CNTL2 0x3A
 
-//0D?
 #define CNTL2_DATA 0b00001111  //enable all sensors and set acceleration range to +-2g
 
 //Important variables
@@ -263,7 +262,7 @@ static PT_THREAD (protothread_timer(struct pt *pt))
         // toggle the LED on the big board
         mPORTAToggleBits(BIT_0);
         
-        //I2C Test
+        //filter raw values
         float Accel_X_avg = running_avg(getAccel_X(), Accel_X_buf, &Accel_X_index); 
         float Accel_Z_avg = running_avg(getAccel_Z(), Accel_Z_buf, &Accel_Z_index);
         float Accel_Y_avg = running_avg(getAccel_Y(), Accel_Y_buf, &Accel_Y_index);
@@ -273,34 +272,65 @@ static PT_THREAD (protothread_timer(struct pt *pt))
         float theta;
         float heading;
         
-        
-        theta = atan(Accel_Y_avg/Accel_X_avg);
+        //find theta from accelerometer values
+        theta = atan(Accel_Z_avg/Accel_X_avg);
         theta=90-(theta*57.3);
         
-        if (Mag_X_avg==0 && Mag_Y_avg<0){
-            heading = 90;
-        }
+        //find magnetometer raw value offset
+        float xlow;
+        float xhigh;
+        float ylow;
+        float yhigh;
+        float zlow;
+        float zhigh;
         
-        else if (Mag_X_avg==0 && Mag_Y_avg>=0){
-            heading = 0;
-        }
+        if (Mag_X_avg<xlow){xlow=Mag_X_avg;}
+        if (Mag_X_avg>xhigh){xhigh=Mag_X_avg;}
         
-        else {
-            heading = atan(Mag_Y_avg/Mag_X_avg);
-            heading= (heading*57.3);
-        }
+        if (Mag_Y_avg<ylow){ylow=Mag_Y_avg;}
+        if (Mag_Y_avg>yhigh){yhigh=Mag_Y_avg;}
         
-        if (heading >360){
-            heading = heading-360;
-        }
+        if (Mag_Z_avg<zlow){zlow=Mag_Z_avg;}
+        if (Mag_Z_avg>zhigh){zhigh=Mag_Z_avg;}
         
-        else if (heading <0){
-            heading = heading+360;
-        }
+        //calibrate magnetometer raw values
+        Mag_X_avg-=(xhigh+xlow)/2;
+        Mag_Y_avg-=(yhigh+ylow)/2;
+        Mag_Z_avg-=(zhigh+zlow)/2;
+        
+        //rescale measurement
+        //float Mag_X=Mag_X_avg/(xhigh-xlow);
+        //float Mag_Y=Mag_Y_avg/(yhigh-ylow);
+        //float Mag_Z=Mag_Z_avg/(zhigh-zlow);
+        
+        //Mag_X_avg=Mag_X_avg/cos(theta/57.3);
+     
+        
+        heading = 57.3*atan2(Mag_Y_avg,Mag_X_avg);
+        if (heading<=0){heading+=360;}
+        
+        
+        //if (Mag_Y_avg>0){
+        //    heading = 90-heading;
+        //}
+        
+        //else if (Mag_Y_avg<0){
+        //    heading = 270-heading;
+        //}
+        
+        //else if (Mag_Y_avg==0 && Mag_X_avg<0){
+        //    heading = 180;
+        //}
+        
+        //else if (Mag_Y_avg==0 && Mag_X_avg>0){
+        //    heading = 0;
+        //}
+        
+   
         
         // draw sys_time
         sprintf(buffer,"Time=%d", sys_time_seconds);
-        sprintf(buffer, "heading=%.1f", heading);
+        sprintf(buffer, "heading=%.1f", Mag_Y_avg);
         printLine2(0, buffer, ILI9340_BLACK, ILI9340_YELLOW);
         
         // NEVER exit while
@@ -349,4 +379,6 @@ void main(void) {
   } // main
 
 // === end  ======================================================
+
+
 
