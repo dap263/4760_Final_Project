@@ -269,12 +269,6 @@ static PT_THREAD (protothread_timer(struct pt *pt))
         float Mag_X_avg = running_avg(getMag_X(), Mag_X_buf, &Mag_X_index);
         float Mag_Y_avg = running_avg(getMag_Y(), Mag_Y_buf, &Mag_Y_index);
         float Mag_Z_avg = running_avg(getMag_Z(), Mag_Z_buf, &Mag_Z_index);
-        float theta;
-        float heading;
-        
-        //find theta from accelerometer values
-        theta = atan(Accel_Z_avg/Accel_X_avg);
-        theta=90-(theta*57.3);
         
         //find magnetometer raw value offset
         float xlow;
@@ -283,7 +277,7 @@ static PT_THREAD (protothread_timer(struct pt *pt))
         float yhigh;
         float zlow;
         float zhigh;
-        
+                
         if (Mag_X_avg<xlow){xlow=Mag_X_avg;}
         if (Mag_X_avg>xhigh){xhigh=Mag_X_avg;}
         
@@ -293,10 +287,38 @@ static PT_THREAD (protothread_timer(struct pt *pt))
         if (Mag_Z_avg<zlow){zlow=Mag_Z_avg;}
         if (Mag_Z_avg>zhigh){zhigh=Mag_Z_avg;}
         
-        //calibrate magnetometer raw values
-        Mag_X_avg-=(xhigh+xlow)/2;
-        Mag_Y_avg-=(yhigh+ylow)/2;
-        Mag_Z_avg-=(zhigh+zlow)/2;
+        float z_offset=(zhigh+zlow)/2;
+        float y_offset=(yhigh+ylow)/2;
+        float x_offset=(xhigh+xlow)/2;
+        
+        float theta; //PITCH
+        float phi;   //ROLL
+        float psi;   //YAW
+        float phi_deg;
+        float theta_deg;
+        float psi_deg;
+        
+        phi = atan2(Accel_Y_avg, Accel_Z_avg);
+        phi_deg = phi*57.3;
+        
+        theta = atan2(-Accel_X_avg,Accel_Y_avg*sin(phi)+Accel_Z_avg*cos(phi));
+        theta_deg = theta*57.3;
+        
+        float top = ((Mag_Z_avg-z_offset)*sin(phi))+((Mag_X_avg-x_offset)*cos(phi));
+        float bottom = ((Mag_Y_avg-y_offset)*cos(phi)+(Mag_X_avg-x_offset)*sin(phi)*sin(theta)-(Mag_Z_avg-z_offset)*sin(theta)*cos(phi));
+        psi=atan2(top,bottom);
+        psi_deg=psi*57.3+180;
+  ////////////////////////////////////////////////////////////////////////////////////////////////////
+        
+        float heading;
+        
+        //find theta from accelerometer values
+        theta = atan(Accel_Z_avg/Accel_X_avg);
+        theta=90-(theta*57.3);
+        
+        
+        
+        
         
         //rescale measurement
         //float Mag_X=Mag_X_avg/(xhigh-xlow);
@@ -330,7 +352,7 @@ static PT_THREAD (protothread_timer(struct pt *pt))
         
         // draw sys_time
         sprintf(buffer,"Time=%d", sys_time_seconds);
-        sprintf(buffer, "heading=%.1f", Mag_Y_avg);
+        sprintf(buffer, "heading=%.1f", psi_deg);
         printLine2(0, buffer, ILI9340_BLACK, ILI9340_YELLOW);
         
         // NEVER exit while
@@ -379,6 +401,4 @@ void main(void) {
   } // main
 
 // === end  ======================================================
-
-
 
