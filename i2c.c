@@ -68,7 +68,6 @@
 
 #define CNTL2 0x3A
 
-//0D?
 #define CNTL2_DATA 0b00001111  //enable all sensors and set acceleration range to +-2g
 
 //Important variables
@@ -85,7 +84,7 @@
  int Accel_Z_index;
  int Mag_X_index;
  int Mag_Y_index;
- int mag_Z_index;
+ int Mag_Z_index;
 
 
 // === print a line on TFT =====================================================
@@ -263,22 +262,58 @@ static PT_THREAD (protothread_timer(struct pt *pt))
         // toggle the LED on the big board
         mPORTAToggleBits(BIT_0);
         
-        //I2C Test
+        //filter raw values
         float Accel_X_avg = running_avg(getAccel_X(), Accel_X_buf, &Accel_X_index); 
         float Accel_Z_avg = running_avg(getAccel_Z(), Accel_Z_buf, &Accel_Z_index);
-        float theta;
+        float Accel_Y_avg = running_avg(getAccel_Y(), Accel_Y_buf, &Accel_Y_index);
+        float Mag_X_avg = running_avg(getMag_X(), Mag_X_buf, &Mag_X_index);
+        float Mag_Y_avg = running_avg(getMag_Y(), Mag_Y_buf, &Mag_Y_index);
+        float Mag_Z_avg = running_avg(getMag_Z(), Mag_Z_buf, &Mag_Z_index);
         
-        //float num= Accel_Z_avg/Accel_X_avg;
-        if (Accel_X_avg==0){
-            theta=0;
-        }
-        else {
-            theta = atan(Accel_Z_avg/Accel_X_avg);
-        }
-        theta=(theta*57.3)+90;
+        //find magnetometer raw value offset
+        float xlow;
+        float xhigh;
+        float ylow;
+        float yhigh;
+        float zlow;
+        float zhigh;
+                
+        if (Mag_X_avg<xlow){xlow=Mag_X_avg;}
+        if (Mag_X_avg>xhigh){xhigh=Mag_X_avg;}
+        
+        if (Mag_Y_avg<ylow){ylow=Mag_Y_avg;}
+        if (Mag_Y_avg>yhigh){yhigh=Mag_Y_avg;}
+        
+        if (Mag_Z_avg<zlow){zlow=Mag_Z_avg;}
+        if (Mag_Z_avg>zhigh){zhigh=Mag_Z_avg;}
+        
+        float z_offset=(zhigh+zlow)/2;
+        float y_offset=(yhigh+ylow)/2;
+        float x_offset=(xhigh+xlow)/2;
+        
+        float theta; //PITCH
+        float phi;   //ROLL
+        float psi;   //YAW
+        float phi_deg;
+        float theta_deg;
+        float psi_deg;
+        
+        phi = atan2(Accel_Y_avg, Accel_Z_avg);
+        phi_deg = phi*57.3;
+        
+        theta = atan2(-Accel_X_avg,Accel_Y_avg*sin(phi)+Accel_Z_avg*cos(phi));
+        theta_deg = theta*57.3;
+        
+        float top = ((Mag_Z_avg-z_offset)*sin(theta))+((Mag_X_avg-x_offset)*cos(theta));
+        float bottom = ((Mag_Y_avg-y_offset)*cos(phi)+(Mag_X_avg-x_offset)*sin(phi)*sin(theta)-(Mag_Z_avg-z_offset)*sin(phi)*cos(theta));
+        psi=atan2(bottom,top);
+        psi_deg=psi*57.3;
+  ////////////////////////////////////////////////////////////////////////////////////////////////////
+   
+        
         // draw sys_time
         sprintf(buffer,"Time=%d", sys_time_seconds);
-        sprintf(buffer, "Theta=%.1f", theta );
+        sprintf(buffer, "heading=%.1f", theta_deg);
         printLine2(0, buffer, ILI9340_BLACK, ILI9340_YELLOW);
         
         // NEVER exit while
@@ -327,4 +362,6 @@ void main(void) {
   } // main
 
 // === end  ======================================================
+
+
 
