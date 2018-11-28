@@ -71,7 +71,8 @@
 #define CNTL2_DATA 0b00001111  //enable all sensors and set acceleration range to +-2g
 
 //Important variables
- #define max_size 10
+ #define max_size 600
+
  int Accel_X_buf[max_size];
  int Accel_Y_buf[max_size];
  int Accel_Z_buf[max_size];
@@ -261,14 +262,23 @@ static PT_THREAD (protothread_timer(struct pt *pt))
         sys_time_seconds++ ;
         // toggle the LED on the big board
         mPORTAToggleBits(BIT_0);
+        float Accel_X_avg;
+        float Accel_Y_avg;
+        float Accel_Z_avg;
+        float Mag_X_avg;
+        float Mag_Y_avg;
+        float Mag_Z_avg;
+        float beta = .025;
         
         //filter raw values
-        float Accel_X_avg = running_avg(getAccel_X(), Accel_X_buf, &Accel_X_index); 
-        float Accel_Z_avg = running_avg(getAccel_Z(), Accel_Z_buf, &Accel_Z_index);
-        float Accel_Y_avg = running_avg(getAccel_Y(), Accel_Y_buf, &Accel_Y_index);
-        float Mag_X_avg = running_avg(getMag_X(), Mag_X_buf, &Mag_X_index);
-        float Mag_Y_avg = running_avg(getMag_Y(), Mag_Y_buf, &Mag_Y_index);
-        float Mag_Z_avg = running_avg(getMag_Z(), Mag_Z_buf, &Mag_Z_index);
+        Accel_X_avg = Accel_X_avg - (beta*(Accel_X_avg-getAccel_X()));
+        Accel_Z_avg = Accel_Z_avg - (beta*(Accel_Z_avg-getAccel_Z()));
+        Accel_Y_avg = Accel_Y_avg - (beta*(Accel_Y_avg-getAccel_Y()));
+        Mag_X_avg = Mag_X_avg - (beta*(Mag_X_avg-getMag_X()));
+        Mag_Y_avg = Mag_Y_avg - (beta*(Mag_Y_avg-getMag_Y()));
+        Mag_Z_avg = Mag_Z_avg - (beta*(Mag_Z_avg-getMag_Z()));
+        
+        
         
         //find magnetometer raw value offset
         float xlow;
@@ -304,8 +314,8 @@ static PT_THREAD (protothread_timer(struct pt *pt))
         theta = atan2(-Accel_X_avg,Accel_Y_avg*sin(phi)+Accel_Z_avg*cos(phi));
         theta_deg = theta*57.3;
         
-        float top = ((Mag_Z_avg-z_offset)*sin(theta))+((Mag_X_avg-x_offset)*cos(theta));
-        float bottom = ((Mag_Y_avg-y_offset)*cos(phi)+(Mag_X_avg-x_offset)*sin(phi)*sin(theta)-(Mag_Z_avg-z_offset)*sin(phi)*cos(theta));
+        float top = ((-Mag_Z_avg)*sin(theta))+((Mag_X_avg)*cos(theta));
+        float bottom = ((-Mag_Y_avg)*cos(phi)+(Mag_X_avg)*sin(phi)*sin(theta)+(Mag_Z_avg)*sin(phi)*cos(theta));
         psi=atan2(bottom,top);
         psi_deg=psi*57.3;
   ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -313,7 +323,7 @@ static PT_THREAD (protothread_timer(struct pt *pt))
         
         // draw sys_time
         sprintf(buffer,"Time=%d", sys_time_seconds);
-        sprintf(buffer, "heading=%.1f", theta_deg);
+        sprintf(buffer, "heading=%.1f", psi_deg);
         printLine2(0, buffer, ILI9340_BLACK, ILI9340_YELLOW);
         
         // NEVER exit while
@@ -362,6 +372,7 @@ void main(void) {
   } // main
 
 // === end  ======================================================
+
 
 
 
