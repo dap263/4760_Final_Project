@@ -304,55 +304,16 @@ static PT_THREAD (protothread_timer(struct pt *pt))
         theta = atan2(-Accel_X_avg,Accel_Y_avg*sin(phi)+Accel_Z_avg*cos(phi));
         theta_deg = theta*57.3;
         
-        float top = ((Mag_Z_avg-z_offset)*sin(phi))+((Mag_X_avg-x_offset)*cos(phi));
-        float bottom = ((Mag_Y_avg-y_offset)*cos(phi)+(Mag_X_avg-x_offset)*sin(phi)*sin(theta)-(Mag_Z_avg-z_offset)*sin(theta)*cos(phi));
-        psi=atan2(top,bottom);
-        psi_deg=psi*57.3+180;
+        float top = ((Mag_Z_avg-z_offset)*sin(theta))+((Mag_X_avg-x_offset)*cos(theta));
+        float bottom = ((Mag_Y_avg-y_offset)*cos(phi)+(Mag_X_avg-x_offset)*sin(phi)*sin(theta)-(Mag_Z_avg-z_offset)*sin(phi)*cos(theta));
+        psi=atan2(bottom,top);
+        psi_deg=psi*57.3;
   ////////////////////////////////////////////////////////////////////////////////////////////////////
-        
-        float heading;
-        
-        //find theta from accelerometer values
-        theta = atan(Accel_Z_avg/Accel_X_avg);
-        theta=90-(theta*57.3);
-        
-        
-        
-        
-        
-        //rescale measurement
-        //float Mag_X=Mag_X_avg/(xhigh-xlow);
-        //float Mag_Y=Mag_Y_avg/(yhigh-ylow);
-        //float Mag_Z=Mag_Z_avg/(zhigh-zlow);
-        
-        //Mag_X_avg=Mag_X_avg/cos(theta/57.3);
-     
-        
-        heading = 57.3*atan2(Mag_Y_avg,Mag_X_avg);
-        if (heading<=0){heading+=360;}
-        
-        
-        //if (Mag_Y_avg>0){
-        //    heading = 90-heading;
-        //}
-        
-        //else if (Mag_Y_avg<0){
-        //    heading = 270-heading;
-        //}
-        
-        //else if (Mag_Y_avg==0 && Mag_X_avg<0){
-        //    heading = 180;
-        //}
-        
-        //else if (Mag_Y_avg==0 && Mag_X_avg>0){
-        //    heading = 0;
-        //}
-        
    
         
         // draw sys_time
         sprintf(buffer,"Time=%d", sys_time_seconds);
-        sprintf(buffer, "heading=%.1f", psi_deg);
+        sprintf(buffer, "heading=%.1f", theta_deg);
         printLine2(0, buffer, ILI9340_BLACK, ILI9340_YELLOW);
         
         // NEVER exit while
@@ -401,4 +362,6 @@ void main(void) {
   } // main
 
 // === end  ======================================================
+
+
 
