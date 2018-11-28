@@ -201,6 +201,17 @@ void main(void) {
   //240x320 vertical display
   tft_setRotation(1); // Use tft_setRotation(1) for 320x240
     
+  // DAC and DMA setup
+  PPSOutput(2, RPB5, SDO2);
+  OpenTimer2(T2_ON | T2_SOURCE_INT | T2_PS_1_1, 1814); // Timer2 @ 22.051 kHz
+                                      // Interrupt flag, no ISR
+  SpiChnOpen(SPI_CHANNEL2, SPI_OPEN_ON | SPI_OPEN_MODE16 | SPI_OPEN_MSTEN | SPI_OPEN_CKE_REV | SPICON_FRMEN | SPICON_FRMPOL, 2);
+  // Initializes SPI in framed mode
+  DmaChnOpen(0,0,DMA_OPEN_DEFAULT); // Auto mode to repeatedly send data
+  DmaChnSetTxfer(0, (void*) & AllDigits, (void*) & SPI2BUF, 5000, 2, 2);
+      // Transfer from DAC_data1 table to SPI2BUF, 256 bytes total, 2 at a time
+  DmaChnSetEventControl(0, DMA_EV_START_IRQ(_TIMER_2_IRQ)); // Timer2 interrupt triggers DMA burst
+  
   // round-robin scheduler for threads
   while (1){
       PT_SCHEDULE(protothread_GPS(&pt_gps));
