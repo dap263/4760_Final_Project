@@ -651,9 +651,16 @@ int PT_timeout = 0;
 // system time updated in TIMER5 ISR below
 volatile unsigned int time_tick_millsec ;
 
+#define DAC_CONTROL 12288
+#define CONTROL_BIT_OFFSET 32
+#define UART_GAIN 4
+unsigned short WiFi_Buffer[2*max_chars_WiFi];
+// Get char from UART, OR with DMA control bits, subtract 32, left shift by 4 to make louder
+
 int PT_GetMachineBuffer(struct pt *pt)
 {
     static char character;
+    static unsigned short buffer_entry;
     static unsigned int num_char, start_time;
     // mark the beginning of the input thread
     PT_BEGIN(pt);
@@ -665,9 +672,10 @@ int PT_GetMachineBuffer(struct pt *pt)
     // clear timeout flag
     PT_timeout = 0;
     // clear input buffer
-    memset(PT_term_buffer_WiFi, 0, max_chars_WiFi);
+//    memset(PT_term_buffer_WiFi, 0, max_chars_WiFi);
+    memset(WiFi_Buffer, 0, 2*max_chars_WiFi);
     
-    while(num_char < max_chars_WiFi)
+    while(1)
     {
         // get the character
         // yield until there is a valid character so that other
@@ -677,19 +685,24 @@ int PT_GetMachineBuffer(struct pt *pt)
                 ((PT_terminate_time>0) && (time_tick_millsec >= PT_terminate_time+start_time)));
        // grab the character from the UART buffer
         character = UARTGetDataByte(UART2);
+        num_char = num_char % (2*max_chars_WiFi);
         
         // Terminate on character match
         if ((character>0) && (character == PT_terminate_char)) {
-            PT_term_buffer_WiFi[num_char] = 0; // zero terminate the string
+//            PT_term_buffer_WiFi[num_char] = 0; // zero terminate the string
+            WiFi_Buffer[num_char] = 0;
             // and leave the while loop
             break;
         }    
         // Terminate on count
         else if ( ((PT_terminate_count>0) && (num_char+1 >= PT_terminate_count))){
             // record the last character
-            PT_term_buffer_WiFi[num_char++] = character ; 
+//            PT_term_buffer_WiFi[num_char++] = character ; 
+            buffer_entry = (unsigned short) character - CONTROL_BIT_OFFSET;
+            WiFi_Buffer[num_char++] = (buffer_entry << UART_GAIN) | DAC_CONTROL;
             // and terminate
-            PT_term_buffer_WiFi[num_char] = 0; // zero terminate the string
+//            PT_term_buffer_WiFi[num_char] = 0; // zero terminate the string
+            WiFi_Buffer[num_char] = 0;
             // and leave the while loop
             break;
         }
@@ -698,13 +711,16 @@ int PT_GetMachineBuffer(struct pt *pt)
             // set the timeout flag
             PT_timeout = 1;
             // clear (probably invalid) input buffer
-            memset(PT_term_buffer_WiFi, 0, max_chars_WiFi);
+//            memset(PT_term_buffer_WiFi, 0, max_chars_WiFi);
+            memset(WiFi_Buffer, 0, 2*max_chars_WiFi);
             // and  leave the while loop
             break ;
         }
         // continue recording input characters
         else {
-            PT_term_buffer_WiFi[num_char++] = character ;  
+//            PT_term_buffer_WiFi[num_char++] = character ;  
+            buffer_entry = (unsigned short) character - CONTROL_BIT_OFFSET;
+            WiFi_Buffer[num_char++] = (buffer_entry << UART_GAIN) | DAC_CONTROL;            
         }
     } //end while(num_char < max_size)
     
@@ -800,7 +816,7 @@ void PT_setup (void)
  
   UARTConfigure(UART2, UART_ENABLE_PINS_TX_RX_ONLY);
   UARTSetLineControl(UART2, UART_DATA_SIZE_8_BITS | UART_PARITY_NONE | UART_STOP_BITS_1);
-  UARTSetDataRate(UART2, pb_clock, BAUDRATE);
+  UARTSetDataRate(UART2, pb_clock, BAUDRATE2);
   UARTEnable(UART2, UART_ENABLE_FLAGS(UART_PERIPHERAL | UART_RX | UART_TX));
   // === init the uart1 ===================
  // SET UART i/o PINS
@@ -809,11 +825,11 @@ void PT_setup (void)
  PPSInput (3, U1RX, RPA2); //Assign U1RX to pin RPA2 -- 
  // The TX pin must be one of the Group 1 output pins:
  // RPA0, RPB3, RPB4, RPB15, RPB7
- PPSOutput(1, RPB7, U1TX); //Assign U1TX to pin RPB7 -- 
+ PPSOutput(1, RPB3, U1TX); //Assign U1TX to pin RPB7 -- 
  
   UARTConfigure(UART1, UART_ENABLE_PINS_TX_RX_ONLY);
   UARTSetLineControl(UART1, UART_DATA_SIZE_8_BITS | UART_PARITY_NONE | UART_STOP_BITS_1);
-  UARTSetDataRate(UART1, pb_clock, BAUDRATE);
+  UARTSetDataRate(UART1, pb_clock, BAUDRATE1);
   UARTEnable(UART1, UART_ENABLE_FLAGS(UART_PERIPHERAL | UART_RX | UART_TX));
   // Feel free to comment this out
   clrscr();
