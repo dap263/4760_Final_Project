@@ -51,6 +51,7 @@
 //Important Addresses
 #define KMX62_ADDR_W 0x1C
 #define KMX62_ADDR_R 0x1D
+
 #define ACCEL_XOUT_L 0x0A
 #define ACCEL_XOUT_H 0x0B
 #define ACCEL_YOUT_L 0x0C
@@ -58,10 +59,37 @@
 #define ACCEL_ZOUT_L 0x0E
 #define ACCEL_ZOUT_H 0x0F
 
+#define MAG_XOUT_L 0x10
+#define MAG_XOUT_H 0x11
+#define MAG_YOUT_L 0x12
+#define MAG_YOUT_H 0x13
+#define MAG_ZOUT_L 0x14
+#define MAG_ZOUT_H 0x15
+
 #define CNTL2 0x3A
-//0D?
+
 #define CNTL2_DATA 0b00001111  //enable all sensors and set acceleration range to +-2g
 
+//Important variables
+ #define max_size 600
+
+ int Accel_X_buf[max_size];
+ int Accel_Y_buf[max_size];
+ int Accel_Z_buf[max_size];
+ int Mag_X_buf[max_size];
+ int Mag_Y_buf[max_size];
+ int Mag_Z_buf[max_size];
+
+ int Accel_X_index;
+ int Accel_Y_index;
+ int Accel_Z_index;
+ int Mag_X_index;
+ int Mag_Y_index;
+ int Mag_Z_index;
+ 
+ float Mag_X_offset;
+ float Mag_Y_offset;
+ float Mag_Z_offset;
 
 
 // === print a line on TFT =====================================================
@@ -103,8 +131,8 @@ void i2c_wait(unsigned int cnt){
     }
 }
 
-unsigned char i2c_read(char target){
-    unsigned char data;
+char i2c_read(char target){
+    char data;
 
     StartI2C1(); //Send Start Condition
     IdleI2C1(); 
@@ -155,6 +183,52 @@ void i2c_write(char data,char target){
     IdleI2C1();
 }
 
+int getAccel_X(){
+   int Accel_X= (int)(i2c_read(ACCEL_XOUT_H)<<8)+(i2c_read(ACCEL_XOUT_L));
+   return Accel_X;
+}
+
+int getAccel_Y(){
+   int Accel_Y= (int)(i2c_read(ACCEL_YOUT_H)<<8)+(i2c_read(ACCEL_YOUT_L));
+   return Accel_Y;
+}
+
+int getAccel_Z(){
+   int Accel_Z= (int)(i2c_read(ACCEL_ZOUT_H)<<8)+(i2c_read(ACCEL_ZOUT_L));
+   return Accel_Z;
+}
+
+int getMag_X(){
+   int Mag_X= (int)(i2c_read(MAG_XOUT_H)<<8)+(i2c_read(MAG_XOUT_L));
+   return Mag_X;
+}
+
+int getMag_Y(){
+   int Mag_Y= (int)(i2c_read(MAG_YOUT_H)<<8)+(i2c_read(MAG_YOUT_L));
+   return Mag_Y;
+}
+
+int getMag_Z(){
+   int Mag_Z= (int)(i2c_read(MAG_ZOUT_H)<<8)+(i2c_read(MAG_ZOUT_L));
+   return Mag_Z;
+}
+
+int running_avg(int val, int ring_buffer[], int *ring_index){
+    //scale values now to prevent overflow
+    ring_buffer[*ring_index]=val/max_size;
+    
+    //Update index
+    *ring_index=(*ring_index++)%max_size;
+    
+    //find the running avg
+    int sum;
+    int i;
+    for (i=0; i<max_size; i++){
+        sum=sum+ring_buffer[i];
+    }        
+    return sum;
+}
+
 // Predefined colors definitions (from tft_master.h)
 //#define	ILI9340_BLACK   0x0000
 //#define	ILI9340_BLUE    0x001F
@@ -179,6 +253,8 @@ int sys_time_seconds ;
 // update a 1 second tick counter
 static PT_THREAD (protothread_timer(struct pt *pt))
 {
+  
+    
     PT_BEGIN(pt);
      // set up LED to blink
      mPORTASetPinsDigitalOut(BIT_0 );    //Set port as output
@@ -186,17 +262,69 @@ static PT_THREAD (protothread_timer(struct pt *pt))
 
       while(1) {
         // yield time 1 second
-        PT_YIELD_TIME_msec(250) ;
+        PT_YIELD_TIME_msec(100) ;
         sys_time_seconds++ ;
         // toggle the LED on the big board
         mPORTAToggleBits(BIT_0);
         
-        //I2C Test
-        int control = i2c_read(CNTL2);
-
+        //FILTER RAW VALUES (DIGITAL LOWPASS)
+        float Accel_X_avg;
+        float Accel_Y_avg;
+        float Accel_Z_avg;
+        float Mag_X_avg;
+        float Mag_Y_avg;
+        float Mag_Z_avg;
+        float beta = .025;
+        
+        Accel_X_avg = Accel_X_avg - (beta*(Accel_X_avg-getAccel_X()));
+        Accel_Z_avg = Accel_Z_avg - (beta*(Accel_Z_avg-getAccel_Z()));
+        Accel_Y_avg = Accel_Y_avg - (beta*(Accel_Y_avg-getAccel_Y()));
+        Mag_X_avg = Mag_X_avg - (beta*(Mag_X_avg-getMag_X()));
+        Mag_Y_avg = Mag_Y_avg - (beta*(Mag_Y_avg-getMag_Y()));
+        Mag_Z_avg = Mag_Z_avg - (beta*(Mag_Z_avg-getMag_Z()));
+       
+        //CALCULATE PITCH, ROLL, AND YAW
+        float theta; //PITCH
+        float phi;   //ROLL
+        float psi;   //YAW
+        float phi_deg;
+        float theta_deg;
+        float psi_deg;
+        
+        //ROLL
+        phi = atan2(Accel_Y_avg, Accel_Z_avg);
+        phi_deg = phi*57.3;
+        
+        //PITCH
+        theta = atan2(-Accel_X_avg,Accel_Y_avg*sin(phi)+Accel_Z_avg*cos(phi));
+        theta_deg = theta*57.3;
+        
+        //YAW
+        float top = ((-Mag_Z_avg)*sin(theta))+((Mag_X_avg)*cos(theta));
+        float bottom = ((-Mag_Y_avg)*cos(phi)+(Mag_X_avg)*sin(phi)*sin(theta)+(Mag_Z_avg)*sin(phi)*cos(theta));
+        
+        float x = Mag_X_avg - Mag_X_offset;
+        float y = Mag_Y_avg - Mag_Y_offset;
+        
+        psi=atan2(y, x);
+        psi_deg=psi*57.3;
+        if (psi_deg<0){psi_deg+=360;}
+        
+       //FILTER ANGLES MEASURED
+        float theta_avg;
+        float phi_avg;
+        float psi_avg;
+        
+        theta_avg = theta_avg-(beta*(theta_avg-theta_deg));
+        phi_avg = phi_avg-(beta*(phi_avg-phi_deg));
+        psi_avg = psi_avg-(beta(psi_avg-psi_deg));
+    
+  ////////////////////////////////////////////////////////////////////////////////////////////////////
+   
+        
         // draw sys_time
-        //sprintf(buffer,"Time=%d", sys_time_seconds);
-        sprintf(buffer, "control=%d", control);
+        sprintf(buffer,"Time=%d", sys_time_seconds);
+        sprintf(buffer, "heading=%.1f", psi_avg);
         printLine2(0, buffer, ILI9340_BLACK, ILI9340_YELLOW);
         
         // NEVER exit while
@@ -206,10 +334,8 @@ static PT_THREAD (protothread_timer(struct pt *pt))
 
 // === Main  ======================================================
 void main(void) {
- //SYSTEMConfigPerformance(PBCLK);
- //I2C Setup
-  
-    
+  //variables for running av
+
   ANSELA = 0; ANSELB = 0; 
    
   PT_setup();
@@ -220,11 +346,21 @@ void main(void) {
   // init the threads
   PT_INIT(&pt_timer);
   
+  //I2C
   OpenI2C1 (I2C_ON, 0x0C2);
   IdleI2C1();
   
+  //Set up KMX62
   i2c_write (CNTL2_DATA, CNTL2);
   
+  //CALCULATE MAGNETOMETER OFFSET
+
+  int i;
+  for (i=0; i<3000; i++){
+      Mag_X_offset+=(float)(getMag_X()/3000);
+      Mag_Y_offset+=(float)(getMag_Y()/3000);
+      Mag_Z_offset+=(float)(getMag_Z()/3000);
+  }
   
 
   // init the display
@@ -242,4 +378,9 @@ void main(void) {
   } // main
 
 // === end  ======================================================
+
+
+
+
+
 

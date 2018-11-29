@@ -60,14 +60,24 @@
 #define DEG2RAD 0.01745329251994329576923690768489
 #define RAD2HOURANGLE 3.8197186342054880584532103209403
 
+// Pulldown macro
+#define EnablePullDownB(bits) CNPUBCLR=bits; CNPDBSET=bits;
+
+// Debouncing FSM variables
+volatile enum FSM_state {released, maybe_pushed, pushed, maybe_released} state = released; // FSM state
+volatile int possible; // Possible key press
 
 // string buffer
 char buffer[60];
 
+// Altitude and Azimuth data from Accelerometer
+int acc_alt;
+int acc_az;
+
 // === thread structures ============================================
 // thread control structs
 // note that UART input and output are threads
-static struct pt pt_gps, pt_input;
+static struct pt pt_gps, pt_input, pt_WiFi, pt_input2, pt_button;
 
 // system 1 second interval tick
 volatile int sys_time_seconds ;
@@ -84,9 +94,9 @@ void printLine(int line_number, char* print_buffer, short text_color, short back
     int v_pos;
     v_pos = line_number * 20 ;
     // erase the pixels
-    tft_fillRoundRect(40, v_pos, 319, 16, 1, back_color);// x,y,w,h,radius,color
+    tft_fillRoundRect(0, v_pos, 319, 16, 1, back_color);// x,y,w,h,radius,color
     tft_setTextColor(text_color); 
-    tft_setCursor(40, v_pos);
+    tft_setCursor(0, v_pos);
     tft_setTextSize(2);
     tft_writeString(print_buffer);
 }
@@ -164,7 +174,7 @@ static PT_THREAD (protothread_GPS(struct pt *pt))
             printLine(1, buffer, ILI9340_WHITE, ILI9340_BLACK);
             sprintf(buffer, "Time: %d:%d:%d", GPS_time_h, GPS_time_m, GPS_time_s);
             printLine(2, buffer, ILI9340_WHITE, ILI9340_BLACK);
-            AltAz2RaDec(90, 0, GPS_Lat, GPS_Lon, GPS_time_h, GPS_time_m, GPS_time_s, GPS_month, GPS_day, GPS_year);
+            AltAz2RaDec(acc_alt, acc_az, GPS_Lat, GPS_Lon, GPS_time_h, GPS_time_m, GPS_time_s, GPS_month, GPS_day, GPS_year);
             sprintf(buffer, "RA: %.3f", RA);
             printLine(3, buffer, ILI9340_WHITE, ILI9340_BLACK);
             sprintf(buffer, "DEC: %.3f", DEC);
@@ -179,20 +189,101 @@ static PT_THREAD (protothread_GPS(struct pt *pt))
     } //end if
   }  
   PT_END(pt);
-} // timer thread
+} // GPS thread
+
+static PT_THREAD (protothread_WiFi(struct pt *pt))
+{
+  PT_BEGIN(pt);
+  int counter;
+  
+  while (1) {
+    
+    counter++;
+    sprintf(buffer, "About to start %d", counter);
+    printLine(0, buffer, ILI9340_WHITE, ILI9340_BLACK);
+    sprintf(buffer, "%d", num_char);
+    printLine(2, buffer, ILI9340_WHITE, ILI9340_BLACK);
+    //DmaChnEnable(0);
+    printLine(4, WiFi_Buffer, ILI9340_WHITE, ILI9340_BLACK);
+    PT_SPAWN(pt, &pt_input2, PT_GetMachineBuffer(&pt_input2));
+    if (counter==40) {
+        
+    }
+    
+    //PT_YIELD_TIME_msec(10000);
+  }  
+  PT_END(pt);
+} // GPS thread
+
+static PT_THREAD (protothread_button(struct pt *pt)) {
+    
+    PT_BEGIN(pt);
+    
+    // PortY as inputs
+    // note that bit 7 will be shift key input, 
+    // separate from keypad
+    
+    // shouldn't this be done in main??
+    mPORTBSetPinsDigitalIn(BIT_4);    //Set port as input
+    EnablePullDownB(BIT_4);
+    
+    while(1) {
+      // yield time
+      PT_YIELD_TIME_msec(30);
+      short button = mPORTBReadBits(BIT_4);
+      // Debouncing FSM
+      switch (state) {
+          case released :
+              // Button released
+              if (button) {
+                  state = maybe_pushed;
+              }
+              break;
+          case maybe_pushed :
+              // Potential button press
+              if (button) {
+                  state = pushed;
+                  AltAz2RaDec(acc_alt, acc_az, GPS_Lat, GPS_Lon, GPS_time_h, GPS_time_m, GPS_time_s, GPS_month, GPS_day, GPS_year); // Get RA and DEC currently viewed
+                  
+              } else {
+                  state = released;
+              }
+              break;
+          case pushed :
+              // Confirmed button press - button still held
+              if (!button) {
+                  state = released;
+              }
+              break;
+          case maybe_released :
+              // Potential button release/change
+              if (button) {
+                  state = pushed;
+              } else {
+                  state = released;
+              }
+              break;
+        } // End switch
+        // NEVER exit while
+    } // END WHILE(1)
+    PT_END(pt);
+} // keypad thread
 
 // === Main  ======================================================
 void main(void) {
- //SYSTEMConfigPerformance(PBCLK);
-
+  
   // === config threads ==========
+    
+    ANSELA = 0; ANSELB = 0;
   PT_setup();
 
   // === setup system wide interrupts  ========
   INTEnableSystemMultiVectoredInt();
 
   // init the threads
-  PT_INIT(&pt_gps);
+//  PT_INIT(&pt_gps);
+  PT_INIT(&pt_WiFi);
+//  PT_INIT(&pt_button);
 
   // init the display
   tft_init_hw();
@@ -201,20 +292,33 @@ void main(void) {
   //240x320 vertical display
   tft_setRotation(1); // Use tft_setRotation(1) for 320x240
     
+  int i;
+  for (i = 0; i < 10000; i++) {
+      if (i % 10 < 5){
+          //WiFi_Buffer[i] = 0 | DAC_config_chan_A;
+      }
+      else {
+          //WiFi_Buffer[i] = 4095 | DAC_config_chan_A;
+      }
+  }
+  
   // DAC and DMA setup
   PPSOutput(2, RPB5, SDO2);
+  PPSOutput(4, RPB10, SS2);
   OpenTimer2(T2_ON | T2_SOURCE_INT | T2_PS_1_1, 1814); // Timer2 @ 22.051 kHz
                                       // Interrupt flag, no ISR
   SpiChnOpen(SPI_CHANNEL2, SPI_OPEN_ON | SPI_OPEN_MODE16 | SPI_OPEN_MSTEN | SPI_OPEN_CKE_REV | SPICON_FRMEN | SPICON_FRMPOL, 2);
   // Initializes SPI in framed mode
-  DmaChnOpen(0,0,DMA_OPEN_DEFAULT); // Auto mode to repeatedly send data
-  DmaChnSetTxfer(0, (void*) & AllDigits, (void*) & SPI2BUF, 5000, 2, 2);
+  DmaChnOpen(0,0,DMA_OPEN_AUTO); // Auto mode to repeatedly send data
+  DmaChnSetTxfer(0, (void*) & WiFi_Buffer, (void*) & SPI2BUF, 16, 2, 2);
       // Transfer from DAC_data1 table to SPI2BUF, 256 bytes total, 2 at a time
   DmaChnSetEventControl(0, DMA_EV_START_IRQ(_TIMER_2_IRQ)); // Timer2 interrupt triggers DMA burst
-  
+  DmaChnEnable(0);  
   // round-robin scheduler for threads
   while (1){
-      PT_SCHEDULE(protothread_GPS(&pt_gps));
+//      PT_SCHEDULE(protothread_GPS(&pt_gps));
+      PT_SCHEDULE(protothread_WiFi(&pt_WiFi));
+//      PT_SCHEDULE(protothread_button(&pt_button));
       }
   } // main
 

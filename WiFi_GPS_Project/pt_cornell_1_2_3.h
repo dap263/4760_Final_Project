@@ -640,8 +640,8 @@ do { static int i ; \
 // Set to ZERO if there is no termination count.
 // -- Termination time is the longest the routine will wait 
 // for a terminator event in milliseconds
-#define max_chars_WiFi 256
-char PT_term_buffer_WiFi[max_chars_WiFi];
+#define max_chars_WiFi 16
+//char PT_term_buffer_WiFi[max_chars_WiFi];
 char PT_terminate_char, PT_terminate_count ;
 // terminate time default million seconds
 int PT_terminate_time = 1000000000 ;
@@ -650,47 +650,62 @@ int PT_timeout = 0;
 
 // system time updated in TIMER5 ISR below
 volatile unsigned int time_tick_millsec ;
-
+volatile unsigned int num_char = 0;
 #define DAC_CONTROL 12288
 #define CONTROL_BIT_OFFSET 32
 #define UART_GAIN 4
-unsigned short WiFi_Buffer[2*max_chars_WiFi];
+#define CENTER_BIAS 2047
+
+unsigned short WiFi_Buffer[max_chars_WiFi];
+//memset(WiFi_Buffer, 0, max_chars_WiFi);
 // Get char from UART, OR with DMA control bits, subtract 32, left shift by 4 to make louder
 
 int PT_GetMachineBuffer(struct pt *pt)
 {
     static char character;
     static unsigned short buffer_entry;
-    static unsigned int num_char, start_time;
+    static unsigned int /*num_char,*/ start_time;
     // mark the beginning of the input thread
     PT_BEGIN(pt);
     
     // actual number received
-    num_char = 0;
     //record milliseconds for timeout calculation
     start_time = time_tick_millsec ;
     // clear timeout flag
+    num_char = 0; //num_char = num_char % max_chars_WiFi;
+    
     PT_timeout = 0;
     // clear input buffer
 //    memset(PT_term_buffer_WiFi, 0, max_chars_WiFi);
-    memset(WiFi_Buffer, 0, 2*max_chars_WiFi);
+    unsigned short temp_buf[max_chars_WiFi];
     
-    while(1)
+    while(num_char < max_chars_WiFi)
     {
         // get the character
         // yield until there is a valid character so that other
-        // threads can execute
-        PT_YIELD_UNTIL(pt, 
+        // threads can execute        PT_YIELD_UNTIL(pt, 
+        
+        /*
                 UARTReceivedDataIsAvailable(UART2) || 
                 ((PT_terminate_time>0) && (time_tick_millsec >= PT_terminate_time+start_time)));
-       // grab the character from the UART buffer
+        */
+        // grab the character from the UART buffer
+        if(UART2GetErrors() & 0x02){
+            UART2ClearAllErrors();
+            //PT_YIELD_TIME_msec(1);
+            break;
+        }
+        
+        while(!UARTReceivedDataIsAvailable(UART2)){};
+        //PT_YIELD_UNTIL(pt, UARTReceivedDataIsAvailable(UART2));//|| 
+                //((PT_terminate_time>0) && (time_tick_millsec >= PT_terminate_time+start_time)));
         character = UARTGetDataByte(UART2);
-        num_char = num_char % (2*max_chars_WiFi);
+        
         
         // Terminate on character match
         if ((character>0) && (character == PT_terminate_char)) {
 //            PT_term_buffer_WiFi[num_char] = 0; // zero terminate the string
-            WiFi_Buffer[num_char] = 0;
+            temp_buf[num_char] = 0;
             // and leave the while loop
             break;
         }    
@@ -698,11 +713,11 @@ int PT_GetMachineBuffer(struct pt *pt)
         else if ( ((PT_terminate_count>0) && (num_char+1 >= PT_terminate_count))){
             // record the last character
 //            PT_term_buffer_WiFi[num_char++] = character ; 
-            buffer_entry = (unsigned short) character - CONTROL_BIT_OFFSET;
-            WiFi_Buffer[num_char++] = (buffer_entry << UART_GAIN) | DAC_CONTROL;
+            buffer_entry = ((unsigned short) character) - CONTROL_BIT_OFFSET;
+            temp_buf[num_char++] = ((buffer_entry << UART_GAIN) + CENTER_BIAS) | DAC_CONTROL;
             // and terminate
 //            PT_term_buffer_WiFi[num_char] = 0; // zero terminate the string
-            WiFi_Buffer[num_char] = 0;
+            temp_buf[num_char] = 0;
             // and leave the while loop
             break;
         }
@@ -712,17 +727,20 @@ int PT_GetMachineBuffer(struct pt *pt)
             PT_timeout = 1;
             // clear (probably invalid) input buffer
 //            memset(PT_term_buffer_WiFi, 0, max_chars_WiFi);
-            memset(WiFi_Buffer, 0, 2*max_chars_WiFi);
+            //memset(temp_buf, 0, max_chars_WiFi);
             // and  leave the while loop
             break ;
         }
         // continue recording input characters
         else {
 //            PT_term_buffer_WiFi[num_char++] = character ;  
-            buffer_entry = (unsigned short) character - CONTROL_BIT_OFFSET;
-            WiFi_Buffer[num_char++] = (buffer_entry << UART_GAIN) | DAC_CONTROL;            
+            buffer_entry = ((unsigned short) character) - CONTROL_BIT_OFFSET;
+            temp_buf[num_char++] = ((buffer_entry << UART_GAIN) + CENTER_BIAS) | DAC_CONTROL;            
         }
     } //end while(num_char < max_size)
+    
+    // copy temporary buffer to DMA buffer
+    memcpy(WiFi_Buffer, temp_buf, max_chars_WiFi*sizeof(short));
     
     // kill this input thread, to allow spawning thread to execute
     PT_EXIT(pt);
@@ -732,7 +750,8 @@ int PT_GetMachineBuffer(struct pt *pt)
 
 //====================================================================
 // === send a string to the UART2 ====================================
-char PT_send_buffer_WiFi[max_chars_WiFi];
+#define max_chars_WiFi_send 256
+char PT_send_buffer_WiFi[max_chars_WiFi_send];
 int num_send_chars ;
 int PutSerialBuffer(struct pt *pt)
 {
@@ -812,7 +831,7 @@ void PT_setup (void)
  PPSInput (2, U2RX, RPA1); //Assign U2RX to pin RPA1 -- 
  // The TX pin must be one of the Group 4 output pins
  // RPA3, RPB0, RPB9, RPB10, RPB14 
- PPSOutput(4, RPB10, U2TX); //Assign U2TX to pin RPB10 -- 
+ PPSOutput(4, RPA3, U2TX); //Assign U2TX to pin RPB10 -- 
  
   UARTConfigure(UART2, UART_ENABLE_PINS_TX_RX_ONLY);
   UARTSetLineControl(UART2, UART_DATA_SIZE_8_BITS | UART_PARITY_NONE | UART_STOP_BITS_1);
