@@ -194,11 +194,13 @@ static PT_THREAD (protothread_GPS(struct pt *pt))
 static PT_THREAD (protothread_WiFi(struct pt *pt))
 {
   PT_BEGIN(pt);
+  int counter;
   while (1) {
-    DmaChnEnable(0);
-    sprintf(buffer, "About to start fukin ur mum");
+    counter++;
+    sprintf(buffer, "About to start %d", counter);
     printLine(0, buffer, ILI9340_WHITE, ILI9340_BLACK);
     PT_SPAWN(pt, &pt_input2, PT_GetMachineBuffer(&pt_input2));
+    DmaChnEnable(0);
     printLine(1, WiFi_Buffer, ILI9340_WHITE, ILI9340_BLACK);
   }  
   PT_END(pt);

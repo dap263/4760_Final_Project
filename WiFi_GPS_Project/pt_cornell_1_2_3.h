@@ -640,7 +640,7 @@ do { static int i ; \
 // Set to ZERO if there is no termination count.
 // -- Termination time is the longest the routine will wait 
 // for a terminator event in milliseconds
-#define max_chars_WiFi 256
+#define max_chars_WiFi 8
 char PT_term_buffer_WiFi[max_chars_WiFi];
 char PT_terminate_char, PT_terminate_count ;
 // terminate time default million seconds
@@ -654,7 +654,7 @@ volatile unsigned int time_tick_millsec ;
 #define DAC_CONTROL 12288
 #define CONTROL_BIT_OFFSET 32
 #define UART_GAIN 4
-unsigned short WiFi_Buffer[2*max_chars_WiFi];
+unsigned short WiFi_Buffer[max_chars_WiFi];
 // Get char from UART, OR with DMA control bits, subtract 32, left shift by 4 to make louder
 
 int PT_GetMachineBuffer(struct pt *pt)
@@ -673,9 +673,9 @@ int PT_GetMachineBuffer(struct pt *pt)
     PT_timeout = 0;
     // clear input buffer
 //    memset(PT_term_buffer_WiFi, 0, max_chars_WiFi);
-    memset(WiFi_Buffer, 0, 2*max_chars_WiFi);
+    memset(WiFi_Buffer, 0, max_chars_WiFi);
     
-    while(1)
+    while(num_char < max_chars_WiFi)
     {
         // get the character
         // yield until there is a valid character so that other
@@ -685,7 +685,6 @@ int PT_GetMachineBuffer(struct pt *pt)
                 ((PT_terminate_time>0) && (time_tick_millsec >= PT_terminate_time+start_time)));
        // grab the character from the UART buffer
         character = UARTGetDataByte(UART2);
-        num_char = num_char % (2*max_chars_WiFi);
         
         // Terminate on character match
         if ((character>0) && (character == PT_terminate_char)) {
@@ -712,7 +711,7 @@ int PT_GetMachineBuffer(struct pt *pt)
             PT_timeout = 1;
             // clear (probably invalid) input buffer
 //            memset(PT_term_buffer_WiFi, 0, max_chars_WiFi);
-            memset(WiFi_Buffer, 0, 2*max_chars_WiFi);
+            memset(WiFi_Buffer, 0, max_chars_WiFi);
             // and  leave the while loop
             break ;
         }
