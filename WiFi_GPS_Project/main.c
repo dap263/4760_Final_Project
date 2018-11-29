@@ -204,6 +204,7 @@ static PT_THREAD (protothread_WiFi(struct pt *pt))
     sprintf(buffer, "%d", num_char);
     printLine(2, buffer, ILI9340_WHITE, ILI9340_BLACK);
     //DmaChnEnable(0);
+    printLine(4, WiFi_Buffer, ILI9340_WHITE, ILI9340_BLACK);
     PT_SPAWN(pt, &pt_input2, PT_GetMachineBuffer(&pt_input2));
     if (counter==40) {
         
@@ -291,6 +292,16 @@ void main(void) {
   //240x320 vertical display
   tft_setRotation(1); // Use tft_setRotation(1) for 320x240
     
+  int i;
+  for (i = 0; i < 10000; i++) {
+      if (i % 10 < 5){
+          //WiFi_Buffer[i] = 0 | DAC_config_chan_A;
+      }
+      else {
+          //WiFi_Buffer[i] = 4095 | DAC_config_chan_A;
+      }
+  }
+  
   // DAC and DMA setup
   PPSOutput(2, RPB5, SDO2);
   PPSOutput(4, RPB10, SS2);
@@ -299,7 +310,7 @@ void main(void) {
   SpiChnOpen(SPI_CHANNEL2, SPI_OPEN_ON | SPI_OPEN_MODE16 | SPI_OPEN_MSTEN | SPI_OPEN_CKE_REV | SPICON_FRMEN | SPICON_FRMPOL, 2);
   // Initializes SPI in framed mode
   DmaChnOpen(0,0,DMA_OPEN_AUTO); // Auto mode to repeatedly send data
-  DmaChnSetTxfer(0, (void*) & WiFi_Buffer, (void*) & SPI2BUF, 20000, 2, 2);
+  DmaChnSetTxfer(0, (void*) & WiFi_Buffer, (void*) & SPI2BUF, 16, 2, 2);
       // Transfer from DAC_data1 table to SPI2BUF, 256 bytes total, 2 at a time
   DmaChnSetEventControl(0, DMA_EV_START_IRQ(_TIMER_2_IRQ)); // Timer2 interrupt triggers DMA burst
   DmaChnEnable(0);  
