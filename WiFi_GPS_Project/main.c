@@ -195,13 +195,21 @@ static PT_THREAD (protothread_WiFi(struct pt *pt))
 {
   PT_BEGIN(pt);
   int counter;
+  
   while (1) {
+    
     counter++;
     sprintf(buffer, "About to start %d", counter);
     printLine(0, buffer, ILI9340_WHITE, ILI9340_BLACK);
+    sprintf(buffer, "%d", num_char);
+    printLine(2, buffer, ILI9340_WHITE, ILI9340_BLACK);
+    //DmaChnEnable(0);
     PT_SPAWN(pt, &pt_input2, PT_GetMachineBuffer(&pt_input2));
-    DmaChnEnable(0);
-    printLine(1, WiFi_Buffer, ILI9340_WHITE, ILI9340_BLACK);
+    if (counter==40) {
+        
+    }
+    
+    //PT_YIELD_TIME_msec(10000);
   }  
   PT_END(pt);
 } // GPS thread
@@ -285,16 +293,16 @@ void main(void) {
     
   // DAC and DMA setup
   PPSOutput(2, RPB5, SDO2);
-  PPSOutput(4, RPA3, SS2);
+  PPSOutput(4, RPB10, SS2);
   OpenTimer2(T2_ON | T2_SOURCE_INT | T2_PS_1_1, 1814); // Timer2 @ 22.051 kHz
                                       // Interrupt flag, no ISR
   SpiChnOpen(SPI_CHANNEL2, SPI_OPEN_ON | SPI_OPEN_MODE16 | SPI_OPEN_MSTEN | SPI_OPEN_CKE_REV | SPICON_FRMEN | SPICON_FRMPOL, 2);
   // Initializes SPI in framed mode
-  DmaChnOpen(0,0,DMA_OPEN_DEFAULT); // Auto mode to repeatedly send data
-  DmaChnSetTxfer(0, (void*) & WiFi_Buffer, (void*) & SPI2BUF, 31600, 2, 2);
+  DmaChnOpen(0,0,DMA_OPEN_AUTO); // Auto mode to repeatedly send data
+  DmaChnSetTxfer(0, (void*) & WiFi_Buffer, (void*) & SPI2BUF, 20000, 2, 2);
       // Transfer from DAC_data1 table to SPI2BUF, 256 bytes total, 2 at a time
   DmaChnSetEventControl(0, DMA_EV_START_IRQ(_TIMER_2_IRQ)); // Timer2 interrupt triggers DMA burst
-    
+  DmaChnEnable(0);  
   // round-robin scheduler for threads
   while (1){
 //      PT_SCHEDULE(protothread_GPS(&pt_gps));
