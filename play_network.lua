@@ -105,7 +105,7 @@ end
 
 local _path
 local function cb_connected(c)
-  c:send("GET tts: ".._path.." HTTP/1.0\r\nHost: iot.nix.nix\r\n".."Connection: close\r\nAccept: /\r\n\r\n")
+  c:send("GET tts: ".._path.." HTTP/1.1\r\nHost: 192.168.43.14\r\n".."Connection: close\r\nAccept: /\r\n\r\n")
   _path = nil
 end
 
