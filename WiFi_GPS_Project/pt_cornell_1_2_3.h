@@ -650,7 +650,7 @@ int PT_timeout = 0;
 
 // system time updated in TIMER5 ISR below
 volatile unsigned int time_tick_millsec ;
-
+volatile unsigned int num_char = 0;
 #define DAC_CONTROL 12288
 #define CONTROL_BIT_OFFSET 32
 #define UART_GAIN 4
@@ -661,12 +661,12 @@ int PT_GetMachineBuffer(struct pt *pt)
 {
     static char character;
     static unsigned short buffer_entry;
-    static unsigned int num_char, start_time;
+    static unsigned int /*num_char,*/ start_time;
     // mark the beginning of the input thread
     PT_BEGIN(pt);
     
     // actual number received
-    num_char = 0;
+    //num_char = 0;
     //record milliseconds for timeout calculation
     start_time = time_tick_millsec ;
     // clear timeout flag
@@ -679,11 +679,13 @@ int PT_GetMachineBuffer(struct pt *pt)
     {
         // get the character
         // yield until there is a valid character so that other
-        // threads can execute
-        PT_YIELD_UNTIL(pt, 
+        // threads can execute        PT_YIELD_UNTIL(pt, 
+
+        /*
                 UARTReceivedDataIsAvailable(UART2) || 
                 ((PT_terminate_time>0) && (time_tick_millsec >= PT_terminate_time+start_time)));
-       // grab the character from the UART buffer
+        */
+        // grab the character from the UART buffer
         character = UARTGetDataByte(UART2);
         
         // Terminate on character match
@@ -731,7 +733,8 @@ int PT_GetMachineBuffer(struct pt *pt)
 
 //====================================================================
 // === send a string to the UART2 ====================================
-char PT_send_buffer_WiFi[max_chars_WiFi];
+#define max_chars_WiFi_send 256
+char PT_send_buffer_WiFi[max_chars_WiFi_send];
 int num_send_chars ;
 int PutSerialBuffer(struct pt *pt)
 {

@@ -86,6 +86,10 @@
  int Mag_X_index;
  int Mag_Y_index;
  int Mag_Z_index;
+ 
+ float Mag_X_offset;
+ float Mag_Y_offset;
+ float Mag_Z_offset;
 
 
 // === print a line on TFT =====================================================
@@ -262,6 +266,8 @@ static PT_THREAD (protothread_timer(struct pt *pt))
         sys_time_seconds++ ;
         // toggle the LED on the big board
         mPORTAToggleBits(BIT_0);
+        
+        //FILTER RAW VALUES (DIGITAL LOWPASS)
         float Accel_X_avg;
         float Accel_Y_avg;
         float Accel_Z_avg;
@@ -270,37 +276,14 @@ static PT_THREAD (protothread_timer(struct pt *pt))
         float Mag_Z_avg;
         float beta = .025;
         
-        //filter raw values
         Accel_X_avg = Accel_X_avg - (beta*(Accel_X_avg-getAccel_X()));
         Accel_Z_avg = Accel_Z_avg - (beta*(Accel_Z_avg-getAccel_Z()));
         Accel_Y_avg = Accel_Y_avg - (beta*(Accel_Y_avg-getAccel_Y()));
         Mag_X_avg = Mag_X_avg - (beta*(Mag_X_avg-getMag_X()));
         Mag_Y_avg = Mag_Y_avg - (beta*(Mag_Y_avg-getMag_Y()));
         Mag_Z_avg = Mag_Z_avg - (beta*(Mag_Z_avg-getMag_Z()));
-        
-        
-        
-        //find magnetometer raw value offset
-        float xlow;
-        float xhigh;
-        float ylow;
-        float yhigh;
-        float zlow;
-        float zhigh;
-                
-        if (Mag_X_avg<xlow){xlow=Mag_X_avg;}
-        if (Mag_X_avg>xhigh){xhigh=Mag_X_avg;}
-        
-        if (Mag_Y_avg<ylow){ylow=Mag_Y_avg;}
-        if (Mag_Y_avg>yhigh){yhigh=Mag_Y_avg;}
-        
-        if (Mag_Z_avg<zlow){zlow=Mag_Z_avg;}
-        if (Mag_Z_avg>zhigh){zhigh=Mag_Z_avg;}
-        
-        float z_offset=(zhigh+zlow)/2;
-        float y_offset=(yhigh+ylow)/2;
-        float x_offset=(xhigh+xlow)/2;
-        
+       
+        //CALCULATE PITCH, ROLL, AND YAW
         float theta; //PITCH
         float phi;   //ROLL
         float psi;   //YAW
@@ -308,22 +291,40 @@ static PT_THREAD (protothread_timer(struct pt *pt))
         float theta_deg;
         float psi_deg;
         
+        //ROLL
         phi = atan2(Accel_Y_avg, Accel_Z_avg);
         phi_deg = phi*57.3;
         
+        //PITCH
         theta = atan2(-Accel_X_avg,Accel_Y_avg*sin(phi)+Accel_Z_avg*cos(phi));
         theta_deg = theta*57.3;
         
+        //YAW
         float top = ((-Mag_Z_avg)*sin(theta))+((Mag_X_avg)*cos(theta));
         float bottom = ((-Mag_Y_avg)*cos(phi)+(Mag_X_avg)*sin(phi)*sin(theta)+(Mag_Z_avg)*sin(phi)*cos(theta));
-        psi=atan2(bottom,top);
+        
+        float x = Mag_X_avg - Mag_X_offset;
+        float y = Mag_Y_avg - Mag_Y_offset;
+        
+        psi=atan2(y, x);
         psi_deg=psi*57.3;
+        if (psi_deg<0){psi_deg+=360;}
+        
+       //FILTER ANGLES MEASURED
+        float theta_avg;
+        float phi_avg;
+        float psi_avg;
+        
+        theta_avg = theta_avg-(beta*(theta_avg-theta_deg));
+        phi_avg = phi_avg-(beta*(phi_avg-phi_deg));
+        psi_avg = psi_avg-(beta(psi_avg-psi_deg));
+    
   ////////////////////////////////////////////////////////////////////////////////////////////////////
    
         
         // draw sys_time
         sprintf(buffer,"Time=%d", sys_time_seconds);
-        sprintf(buffer, "heading=%.1f", psi_deg);
+        sprintf(buffer, "heading=%.1f", psi_avg);
         printLine2(0, buffer, ILI9340_BLACK, ILI9340_YELLOW);
         
         // NEVER exit while
@@ -333,9 +334,6 @@ static PT_THREAD (protothread_timer(struct pt *pt))
 
 // === Main  ======================================================
 void main(void) {
- //SYSTEMConfigPerformance(PBCLK);
- //I2C Setup
-    
   //variables for running av
 
   ANSELA = 0; ANSELB = 0; 
@@ -355,6 +353,14 @@ void main(void) {
   //Set up KMX62
   i2c_write (CNTL2_DATA, CNTL2);
   
+  //CALCULATE MAGNETOMETER OFFSET
+
+  int i;
+  for (i=0; i<3000; i++){
+      Mag_X_offset+=(float)(getMag_X()/3000);
+      Mag_Y_offset+=(float)(getMag_Y()/3000);
+      Mag_Z_offset+=(float)(getMag_Z()/3000);
+  }
   
 
   // init the display
@@ -372,6 +378,8 @@ void main(void) {
   } // main
 
 // === end  ======================================================
+
+
 
 
 

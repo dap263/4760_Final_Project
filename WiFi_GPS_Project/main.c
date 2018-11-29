@@ -94,9 +94,9 @@ void printLine(int line_number, char* print_buffer, short text_color, short back
     int v_pos;
     v_pos = line_number * 20 ;
     // erase the pixels
-    tft_fillRoundRect(40, v_pos, 319, 16, 1, back_color);// x,y,w,h,radius,color
+    tft_fillRoundRect(0, v_pos, 319, 16, 1, back_color);// x,y,w,h,radius,color
     tft_setTextColor(text_color); 
-    tft_setCursor(40, v_pos);
+    tft_setCursor(0, v_pos);
     tft_setTextSize(2);
     tft_writeString(print_buffer);
 }
@@ -213,6 +213,8 @@ static PT_THREAD (protothread_button(struct pt *pt)) {
     // PortY as inputs
     // note that bit 7 will be shift key input, 
     // separate from keypad
+    
+    // shouldn't this be done in main??
     mPORTBSetPinsDigitalIn(BIT_4);    //Set port as input
     EnablePullDownB(BIT_4);
     
@@ -262,6 +264,8 @@ static PT_THREAD (protothread_button(struct pt *pt)) {
 void main(void) {
   
   // === config threads ==========
+    
+    ANSELA = 0; ANSELB = 0;
   PT_setup();
 
   // === setup system wide interrupts  ========
@@ -287,7 +291,7 @@ void main(void) {
   SpiChnOpen(SPI_CHANNEL2, SPI_OPEN_ON | SPI_OPEN_MODE16 | SPI_OPEN_MSTEN | SPI_OPEN_CKE_REV | SPICON_FRMEN | SPICON_FRMPOL, 2);
   // Initializes SPI in framed mode
   DmaChnOpen(0,0,DMA_OPEN_DEFAULT); // Auto mode to repeatedly send data
-  DmaChnSetTxfer(0, (void*) & WiFi_Buffer, (void*) & SPI2BUF, 10000000, 2, 2);
+  DmaChnSetTxfer(0, (void*) & WiFi_Buffer, (void*) & SPI2BUF, 31600, 2, 2);
       // Transfer from DAC_data1 table to SPI2BUF, 256 bytes total, 2 at a time
   DmaChnSetEventControl(0, DMA_EV_START_IRQ(_TIMER_2_IRQ)); // Timer2 interrupt triggers DMA burst
     
