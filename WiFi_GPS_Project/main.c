@@ -82,6 +82,22 @@ static struct pt pt_gps, pt_input, pt_WiFi, pt_input2, pt_button;
 // system 1 second interval tick
 volatile int sys_time_seconds ;
 
+// UNCOMMENT ONCE WE REMOVE TFT LIBRARY
+//void delay_ms(unsigned long i){
+///* Create a software delay about i ms long
+// * Parameters:
+// *      i:  equal to number of milliseconds for delay
+// * Returns: Nothing
+// * Note: Uses Core Timer. Core Timer is cleared at the initialiazion of
+// *      this function. So, applications sensitive to the Core Timer are going
+// *      to be affected
+// */
+//    unsigned int j;
+//    j = dTime_ms * i;
+//    WriteCoreTimer(0);
+//    while (ReadCoreTimer() < j);
+//}
+
 // === print a line on TFT =====================================================
 // print a line on the TFT
 // string buffer
@@ -99,6 +115,54 @@ void printLine(int line_number, char* print_buffer, short text_color, short back
     tft_setCursor(0, v_pos);
     tft_setTextSize(2);
     tft_writeString(print_buffer);
+}
+
+void ESP_setup (void) {
+    
+    printf("\r\n");
+    printf("function cb_disconnected()\r\n");
+//    delay_ms(100);
+//    printf("print(\"wassup dog\")\r\n");
+    delay_ms(100);
+    printf("print(\"\\a\")\r\n");
+    delay_ms(100);
+    printf("end\r\n");
+    delay_ms(100);
+    printf("function cb_connected(sck, c)\r\n");
+    delay_ms(100);
+    printf("print(c)\r\n");
+    delay_ms(100);
+    printf("if (i == 0) then\r\n");
+    delay_ms(100);
+    printf("print(\"\\b\")\r\n");
+    delay_ms(100);
+    printf("end\r\n");
+    delay_ms(100);
+    printf("i = i + 1\r\n");
+    delay_ms(100);
+    printf("end\r\n");
+    //printf("uart.setup(0, 256000, 8, uart.PARITY_NONE, uart.STOPBITS_1, 1)\r\n");
+    
+}
+
+void ESP_request_data(char *message) {
+    printf("\r\n");
+    delay_ms(10);
+    printf("i = 0\r\n");
+    delay_ms(10);
+    printf("srv=net.createConnection(net.TCP,0)\r\n");
+    delay_ms(10);
+    printf("srv:on(\"receive\", cb_connected)\r\n");
+    delay_ms(10);
+    printf("srv:on(\"disconnection\", cb_disconnected)\r\n");
+    delay_ms(10);
+    printf("srv:on(\"connection\",function(sck,c)\r\n");
+    delay_ms(10);
+    printf("sck:send(\"GET tts: %s\\r\\n HTTP /1.1\\r\\nHost: 192.168.43.1\\r\\nConnection: close\\r\\nAccept: */*\\r\\n\\r\\n\")\r\n", message);
+    delay_ms(10);
+    printf("end)\r\n");
+    delay_ms(10);
+    printf("srv:connect(5000,\"192.168.43.14\")\r\n");
 }
 
 // Floating point modulus: a mod b
@@ -195,16 +259,19 @@ static PT_THREAD (protothread_WiFi(struct pt *pt))
 {
   PT_BEGIN(pt);
   int counter;
-  
+  // send commands to connect to server and receive speech
+  ESP_setup();
   while (1) {
     
-    counter++;
-    sprintf(buffer, "About to start %d", counter);
-    printLine(0, buffer, ILI9340_WHITE, ILI9340_BLACK);
-    sprintf(buffer, "%d", num_char);
-    printLine(2, buffer, ILI9340_WHITE, ILI9340_BLACK);
-    //DmaChnEnable(0);
-    printLine(4, WiFi_Buffer, ILI9340_WHITE, ILI9340_BLACK);
+//    counter++;
+//    sprintf(buffer, "About to start %d", counter);
+//    printLine(0, buffer, ILI9340_WHITE, ILI9340_BLACK);
+//    sprintf(buffer, "%d", num_char);
+//    printLine(2, buffer, ILI9340_WHITE, ILI9340_BLACK);
+//    //DmaChnEnable(0);
+//    printLine(4, WiFi_Buffer, ILI9340_WHITE, ILI9340_BLACK);
+    
+    
     PT_SPAWN(pt, &pt_input2, PT_GetMachineBuffer(&pt_input2));
     if (counter==40) {
         
@@ -224,13 +291,13 @@ static PT_THREAD (protothread_button(struct pt *pt)) {
     // separate from keypad
     
     // shouldn't this be done in main??
-    mPORTBSetPinsDigitalIn(BIT_4);    //Set port as input
-    EnablePullDownB(BIT_4);
+    mPORTBSetPinsDigitalIn(BIT_13);    //Set port as input
+    EnablePullDownB(BIT_13);
     
     while(1) {
       // yield time
       PT_YIELD_TIME_msec(30);
-      short button = mPORTBReadBits(BIT_4);
+      short button = mPORTBReadBits(BIT_13);
       // Debouncing FSM
       switch (state) {
           case released :
@@ -252,6 +319,8 @@ static PT_THREAD (protothread_button(struct pt *pt)) {
           case pushed :
               // Confirmed button press - button still held
               if (!button) {
+//                  printf("sending request\r\n");
+                  ESP_request_data("you're looking at andromeda, bitch!");
                   state = released;
               }
               break;
@@ -268,17 +337,6 @@ static PT_THREAD (protothread_button(struct pt *pt)) {
     } // END WHILE(1)
     PT_END(pt);
 } // keypad thread
-
-void ESP_setup (void) {
-    
-    //printf("uart.setup(0, 256000, 8, uart.PARITY_NONE, uart.STOPBITS_1, 1)\r\n");
-    printf("srv=net.createConnection(net.TCP,0)\r\n");
-    printf("srv:on(\"receive\",function(sck,c) print(c) end)\r\n");
-    printf("srv:on(\"connection\",function(sck,c)\r\n");
-    printf("sck:send(\"GET tts: hello HTTP /1.1\\r\\nHost: 192.168.43.1\\r\\nConnection: close\\r\\nAccept: */*\\r\\n\\r\\n\")\r\n");
-    printf("end)\r\n");
-    printf("srv:connect(5000,\"192.168.43.14\")\r\n");
-}
 
 // === Main  ======================================================
 void main(void) {
@@ -302,35 +360,38 @@ void main(void) {
   tft_fillScreen(ILI9340_BLACK);
   //240x320 vertical display
   tft_setRotation(1); // Use tft_setRotation(1) for 320x240
-    
-  int i;
-  for (i = 0; i < 10000; i++) {
-      if (i % 10 < 5){
-          //WiFi_Buffer[i] = 0 | DAC_config_chan_A;
-      }
-      else {
-          //WiFi_Buffer[i] = 4095 | DAC_config_chan_A;
-      }
-  }
+  
+  // initialize buffer to be at half DAC output
+//  memset(WiFi_Buffer, 2048, sizeof(WiFi_Buffer));
+  
+  // init buffer with square wave
+//  int i;
+//  for (i = 0; i < max_chars_WiFi; i++) {
+//      if (i % 40 < 5){
+//          WiFi_Buffer[i] = 1800 | DAC_config_chan_A;
+//      }
+//      else {
+//          WiFi_Buffer[i] = 2200 | DAC_config_chan_A;
+//      }
+//  }
   
   // DAC and DMA setup
   PPSOutput(2, RPB5, SDO2);
   PPSOutput(4, RPB10, SS2);
-  OpenTimer2(T2_ON | T2_SOURCE_INT | T2_PS_1_1, 1814); // Timer2 @ 22.051 kHz
+  OpenTimer2(T2_ON | T2_SOURCE_INT | T2_PS_1_1, 7256); // 1814 for 22.05 k
                                       // Interrupt flag, no ISR
   SpiChnOpen(SPI_CHANNEL2, SPI_OPEN_ON | SPI_OPEN_MODE16 | SPI_OPEN_MSTEN | SPI_OPEN_CKE_REV | SPICON_FRMEN | SPICON_FRMPOL, 2);
   // Initializes SPI in framed mode
-  DmaChnOpen(0,0,DMA_OPEN_AUTO); // Auto mode to repeatedly send data
+  DmaChnOpen(0,0,DMA_OPEN_DEFAULT); // Change default to auto // Auto mode to repeatedly send data
   DmaChnSetTxfer(0, (void*) & WiFi_Buffer, (void*) & SPI2BUF, sizeof(WiFi_Buffer), 2, 2);
       // Transfer from DAC_data1 table to SPI2BUF, 256 bytes total, 2 at a time
-  DmaChnSetEventControl(0, DMA_EV_START_IRQ(_TIMER_2_IRQ)); // Timer2 interrupt triggers DMA burst
-  DmaChnEnable(0);  
-  ESP_setup();
+  DmaChnSetEventControl(0, DMA_EV_START_IRQ(_TIMER_2_IRQ)); // Timer2 interrupt triggers DMA burst  
+  
   // round-robin scheduler for threads
   while (1){
 //      PT_SCHEDULE(protothread_GPS(&pt_gps));
       PT_SCHEDULE(protothread_WiFi(&pt_WiFi));
-//      PT_SCHEDULE(protothread_button(&pt_button));
+      PT_SCHEDULE(protothread_button(&pt_button));
       }
   } // main
 
