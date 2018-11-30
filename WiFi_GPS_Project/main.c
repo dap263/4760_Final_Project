@@ -269,6 +269,17 @@ static PT_THREAD (protothread_button(struct pt *pt)) {
     PT_END(pt);
 } // keypad thread
 
+void ESP_setup (void) {
+    
+    //printf("uart.setup(0, 256000, 8, uart.PARITY_NONE, uart.STOPBITS_1, 1)\r\n");
+    printf("srv=net.createConnection(net.TCP,0)\r\n");
+    printf("srv:on(\"receive\",function(sck,c) print(c) end)\r\n");
+    printf("srv:on(\"connection\",function(sck,c)\r\n");
+    printf("sck:send(\"GET tts: hello HTTP /1.1\\r\\nHost: 192.168.43.1\\r\\nConnection: close\\r\\nAccept: */*\\r\\n\\r\\n\")\r\n");
+    printf("end)\r\n");
+    printf("srv:connect(5000,\"192.168.43.14\")\r\n");
+}
+
 // === Main  ======================================================
 void main(void) {
   
@@ -310,10 +321,11 @@ void main(void) {
   SpiChnOpen(SPI_CHANNEL2, SPI_OPEN_ON | SPI_OPEN_MODE16 | SPI_OPEN_MSTEN | SPI_OPEN_CKE_REV | SPICON_FRMEN | SPICON_FRMPOL, 2);
   // Initializes SPI in framed mode
   DmaChnOpen(0,0,DMA_OPEN_AUTO); // Auto mode to repeatedly send data
-  DmaChnSetTxfer(0, (void*) & WiFi_Buffer, (void*) & SPI2BUF, 16, 2, 2);
+  DmaChnSetTxfer(0, (void*) & WiFi_Buffer, (void*) & SPI2BUF, sizeof(WiFi_Buffer), 2, 2);
       // Transfer from DAC_data1 table to SPI2BUF, 256 bytes total, 2 at a time
   DmaChnSetEventControl(0, DMA_EV_START_IRQ(_TIMER_2_IRQ)); // Timer2 interrupt triggers DMA burst
   DmaChnEnable(0);  
+  ESP_setup();
   // round-robin scheduler for threads
   while (1){
 //      PT_SCHEDULE(protothread_GPS(&pt_gps));
