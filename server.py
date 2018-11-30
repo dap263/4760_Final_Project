@@ -37,13 +37,13 @@ import matplotlib.pyplot as plt
 #     # assert min(y) >= 0
 #     y = []
 #     x = []
-#     for i in range (30000):
-#         x.append(i)
-#         if i % 2 == 0:
-#             y.append(np.uint8(127 + 32))
-#         else:
-#             y.append(np.uint8(0 + 32))
-            
+#     # for i in range (30000):
+#     #     x.append(i)
+#     #     if i % 10 < 5:
+#     #         y.append(np.uint8(127 + 32))
+#     #     else:
+#     #         y.append(np.uint8(0 + 32))
+#     y = np.random.random_integers(32, 159, 20000)
 #     # plt.plot(x,y)
 #     z = []
 #     u8_str = ''
@@ -69,7 +69,7 @@ def do_TTS(msg):
     ind = msg.find(': ')
     ind1 = msg.find('\r\n')
     word = msg[ind+2:ind1]
-    engine.speak('hello, Bruce', 0)
+    engine.speak(word, 0)
     stream.Close()
 #     # need to change this to temp if i want it to be overwritten each time
     f = wave.open("temp.wav", 'rb')
@@ -85,11 +85,11 @@ def do_TTS(msg):
 #     # should this just be frames[i+1] to do the top 8 bits? 
 #     # frames = [ struct.unpack("<h", frames[i] + frames[i+1])[0] for i in range(0,len(frames),2) ]
     frames = [ struct.unpack("<h", frames[i] + frames[i+1])[0] for i in range(0,len(frames),2) ]
-    frames = [ np.uint8( ( ( frames[i] + 2**15 ) >> 8 ) + 32 ) for i in range(0, len(frames)) ]
+    frames = [ np.uint8( ( ( frames[i] + 2**15 ) >> 9 ) + 32 ) for i in range(0, len(frames),4) ]
     t = np.linspace(0, 10000, f.getnframes())
-    assert max(frames) <= 255 and min(frames) >= 32
-    plt.plot(t, frames)
-    plt.show()
+    assert max(frames) <= 159 and min(frames) >= 32
+    # plt.plot(t, frames)
+    # plt.show()
     z = []
     for i in range(len(frames)):
         # if (i%4 != 0):
@@ -136,8 +136,8 @@ while True:
     
     # should this come before or after? 
     # body = "<html><body>Hello {}</body></html>".format(addr)
-    response = "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nContent-Type: text/html\r\nConnection: Closed\r\n\r\n" # % len(body)
-    cltskt.send(response )# + body)
+    # response = "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nContent-Type: text/html\r\nConnection: Closed\r\n\r\n" # % len(body)
+    # cltskt.send(response ) # + body)
 
     if (msg.find('ra') != -1):
         # need to change ra and dec to specific positions in get request

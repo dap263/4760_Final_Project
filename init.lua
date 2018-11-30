@@ -69,7 +69,7 @@ wifi.setmode(wifi.STATION)
 wifi.sta.config({ssid='FBI', pwd='verystrong'})
 
 tmr.delay(1000000)
-
+uart.setup(0, 256000, 8, uart.PARITY_NONE, uart.STOPBITS_1, 1)
 if node.flashindex() then
     -- _init.lua exists
     print("_init.lua successfully called")
