@@ -642,7 +642,9 @@ do { static int i ; \
 // for a terminator event in milliseconds
 #define max_chars_WiFi 15000
 //char PT_term_buffer_WiFi[max_chars_WiFi];
-char PT_terminate_char, PT_terminate_count ;
+char PT_terminate_char = '\a';
+char PT_terminate_count ;
+char DMA_start_char = '\b';
 // terminate time default million seconds
 int PT_terminate_time = 1000000000 ;
 // timeout return value
@@ -653,11 +655,11 @@ volatile unsigned int time_tick_millsec ;
 volatile unsigned int num_char = 0;
 #define DAC_CONTROL 12288
 #define CONTROL_BIT_OFFSET 32
-#define UART_GAIN 4
+#define UART_GAIN 6
 #define CENTER_BIAS 2047
 
 unsigned short WiFi_Buffer[max_chars_WiFi];
-//memset(WiFi_Buffer, 0, max_chars_WiFi);
+
 // Get char from UART, OR with DMA control bits, subtract 32, left shift by 4 to make louder
 
 int PT_GetMachineBuffer(struct pt *pt)
@@ -696,16 +698,23 @@ int PT_GetMachineBuffer(struct pt *pt)
             break;
         }
         
-        while(!UARTReceivedDataIsAvailable(UART2)){};
-        //PT_YIELD_UNTIL(pt, UARTReceivedDataIsAvailable(UART2));//|| 
+//        while(!UARTReceivedDataIsAvailable(UART2)){};
+        PT_YIELD_UNTIL(pt, UARTReceivedDataIsAvailable(UART2));//|| 
                 //((PT_terminate_time>0) && (time_tick_millsec >= PT_terminate_time+start_time)));
         character = UARTGetDataByte(UART2);
         
-        
-        // Terminate on character match
-        if ((character>0) && (character == PT_terminate_char)) {
+        if ((character>0) && (character == DMA_start_char)) {
 //            PT_term_buffer_WiFi[num_char] = 0; // zero terminate the string
-            WiFi_Buffer[num_char] = 0;
+            DmaChnEnable(0);
+            //WiFi_Buffer[num_char] = 0;
+            // and leave the while loop
+            //break;
+        }    
+        // Terminate on character match
+        else if ((character>0) && (character == PT_terminate_char)) {
+//            PT_term_buffer_WiFi[num_char] = 0; // zero terminate the string
+            //DmaChnEnable(0);
+            //WiFi_Buffer[num_char] = 0;
             // and leave the while loop
             break;
         }    
@@ -717,7 +726,7 @@ int PT_GetMachineBuffer(struct pt *pt)
             WiFi_Buffer[num_char++] = ((buffer_entry << UART_GAIN) + CENTER_BIAS) | DAC_CONTROL;
             // and terminate
 //            PT_term_buffer_WiFi[num_char] = 0; // zero terminate the string
-            WiFi_Buffer[num_char] = 0;
+            //WiFi_Buffer[num_char] = 0;
             // and leave the while loop
             break;
         }
