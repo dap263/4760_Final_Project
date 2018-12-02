@@ -87,9 +87,27 @@
  int Mag_Y_index;
  int Mag_Z_index;
  
- float Mag_X_offset;
- float Mag_Y_offset;
- float Mag_Z_offset;
+ //CALIBRATING OFFSETS
+ volatile float Mag_X_offset;
+ volatile float Mag_Y_offset;
+ volatile float Mag_Z_offset;
+ 
+ //CALCULATE PITCH, ROLL, AND YAW
+ float theta; //PITCH
+ float phi;   //ROLL
+ float psi;   //YAW
+ float phi_deg;
+ float theta_deg;
+ float psi_deg;
+ 
+ //FILTER RAW VALUES (DIGITAL LOWPASS)
+ float Accel_X_avg;
+ float Accel_Y_avg;
+ float Accel_Z_avg;
+ float Mag_X_avg;
+ float Mag_Y_avg;
+ float Mag_Z_avg;
+ float beta = .2;
 
 
 // === print a line on TFT =====================================================
@@ -253,28 +271,13 @@ int sys_time_seconds ;
 // update a 1 second tick counter
 static PT_THREAD (protothread_timer(struct pt *pt))
 {
-  
-    
     PT_BEGIN(pt);
-     // set up LED to blink
-     mPORTASetPinsDigitalOut(BIT_0 );    //Set port as output
-          mPORTASetBits(BIT_0 );	//Clear bits to ensure light is off.
 
       while(1) {
         // yield time 1 second
         PT_YIELD_TIME_msec(100) ;
-        sys_time_seconds++ ;
-        // toggle the LED on the big board
-        mPORTAToggleBits(BIT_0);
         
-        //FILTER RAW VALUES (DIGITAL LOWPASS)
-        float Accel_X_avg;
-        float Accel_Y_avg;
-        float Accel_Z_avg;
-        float Mag_X_avg;
-        float Mag_Y_avg;
-        float Mag_Z_avg;
-        float beta = .025;
+        
         
         Accel_X_avg = Accel_X_avg - (beta*(Accel_X_avg-getAccel_X()));
         Accel_Z_avg = Accel_Z_avg - (beta*(Accel_Z_avg-getAccel_Z()));
@@ -283,49 +286,32 @@ static PT_THREAD (protothread_timer(struct pt *pt))
         Mag_Y_avg = Mag_Y_avg - (beta*(Mag_Y_avg-getMag_Y()));
         Mag_Z_avg = Mag_Z_avg - (beta*(Mag_Z_avg-getMag_Z()));
        
-        //CALCULATE PITCH, ROLL, AND YAW
-        float theta; //PITCH
-        float phi;   //ROLL
-        float psi;   //YAW
-        float phi_deg;
-        float theta_deg;
-        float psi_deg;
+        
         
         //ROLL
         phi = atan2(Accel_Y_avg, Accel_Z_avg);
         phi_deg = phi*57.3;
         
         //PITCH
-        theta = atan2(-Accel_X_avg,Accel_Y_avg*sin(phi)+Accel_Z_avg*cos(phi));
+        theta = -atan2(-Accel_X_avg,Accel_Y_avg*sin(phi)+Accel_Z_avg*cos(phi));
         theta_deg = theta*57.3;
         
         //YAW
-        float top = ((-Mag_Z_avg)*sin(theta))+((Mag_X_avg)*cos(theta));
-        float bottom = ((-Mag_Y_avg)*cos(phi)+(Mag_X_avg)*sin(phi)*sin(theta)+(Mag_Z_avg)*sin(phi)*cos(theta));
-        
-        float x = Mag_X_avg - Mag_X_offset;
-        float y = Mag_Y_avg - Mag_Y_offset;
-        
-        psi=atan2(y, x);
+        float bottom = (-(Mag_Z_avg-Mag_Z_offset)*sin(theta))+((Mag_X_avg-Mag_X_offset)*cos(theta));
+        float top = (-(Mag_Y_avg-Mag_Y_offset)*cos(phi)+(Mag_X_avg-Mag_X_offset)*sin(phi)*sin(theta)+(Mag_Z_avg-Mag_Z_offset)*sin(phi)*cos(theta));
+
+        psi=atan2(top, bottom);
         psi_deg=psi*57.3;
         if (psi_deg<0){psi_deg+=360;}
-        
-       //FILTER ANGLES MEASURED
-        float theta_avg;
-        float phi_avg;
-        float psi_avg;
-        
-        theta_avg = theta_avg-(beta*(theta_avg-theta_deg));
-        phi_avg = phi_avg-(beta*(phi_avg-phi_deg));
-        psi_avg = psi_avg-(beta(psi_avg-psi_deg));
     
   ////////////////////////////////////////////////////////////////////////////////////////////////////
-   
         
-        // draw sys_time
-        sprintf(buffer,"Time=%d", sys_time_seconds);
-        sprintf(buffer, "heading=%.1f", psi_avg);
         printLine2(0, buffer, ILI9340_BLACK, ILI9340_YELLOW);
+        sprintf(buffer, "heading=%.1f", psi_deg);
+        printLine2(1, buffer, ILI9340_BLACK, ILI9340_YELLOW);
+        sprintf(buffer, "offset X=%.1f", Mag_X_offset);
+        printLine2(2, buffer, ILI9340_BLACK, ILI9340_YELLOW);
+        sprintf(buffer, "offset Y=%.1f", Mag_Y_offset);
         
         // NEVER exit while
       } // END WHILE(1)
@@ -356,10 +342,15 @@ void main(void) {
   //CALCULATE MAGNETOMETER OFFSET
 
   int i;
-  for (i=0; i<3000; i++){
-      Mag_X_offset+=(float)(getMag_X()/3000);
-      Mag_Y_offset+=(float)(getMag_Y()/3000);
-      Mag_Z_offset+=(float)(getMag_Z()/3000);
+  for (i=0; i<5000; i++){
+     
+      Mag_X_avg = Mag_X_avg - (beta*(Mag_X_avg-getMag_X()));
+      Mag_Y_avg = Mag_Y_avg - (beta*(Mag_Y_avg-getMag_Y()));
+      Mag_Z_avg = Mag_Z_avg - (beta*(Mag_Z_avg-getMag_Z()));
+      
+      Mag_X_offset+=(float)(Mag_X_avg/5000);
+      Mag_Y_offset+=(float)(Mag_Y_avg/5000);
+      Mag_Z_offset+=(float)(Mag_Z_avg/5000);
   }
   
 
@@ -378,9 +369,5 @@ void main(void) {
   } // main
 
 // === end  ======================================================
-
-
-
-
 
 
