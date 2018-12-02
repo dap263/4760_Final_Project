@@ -88,9 +88,9 @@
  int Mag_Z_index;
  
  //CALIBRATING OFFSETS
- volatile float Mag_X_offset;
- volatile float Mag_Y_offset;
- volatile float Mag_Z_offset;
+ volatile float Mag_X_offset=-37.7;
+ volatile float Mag_Y_offset=833.1;
+ volatile float Mag_Z_offset=2000;
  
  //CALCULATE PITCH, ROLL, AND YAW
  float theta; //PITCH
@@ -293,12 +293,12 @@ static PT_THREAD (protothread_timer(struct pt *pt))
         phi_deg = phi*57.3;
         
         //PITCH
-        theta = -atan2(-Accel_X_avg,Accel_Y_avg*sin(phi)+Accel_Z_avg*cos(phi));
+        theta = atan2(-Accel_X_avg,Accel_Y_avg*sin(phi)+Accel_Z_avg*cos(phi));
         theta_deg = theta*57.3;
         
         //YAW
-        float bottom = (-(Mag_Z_avg-Mag_Z_offset)*sin(theta))+((Mag_X_avg-Mag_X_offset)*cos(theta));
-        float top = (-(Mag_Y_avg-Mag_Y_offset)*cos(phi)+(Mag_X_avg-Mag_X_offset)*sin(phi)*sin(theta)+(Mag_Z_avg-Mag_Z_offset)*sin(phi)*cos(theta));
+        float bottom = ((Mag_Z_avg-Mag_Z_offset)*sin(theta))+((Mag_X_avg-Mag_X_offset)*cos(theta));
+        float top = ((Mag_Y_avg-Mag_Y_offset)*cos(phi)-(Mag_Z_avg-Mag_Z_offset)*sin(phi)*cos(theta));
 
         psi=atan2(top, bottom);
         psi_deg=psi*57.3;
@@ -309,9 +309,9 @@ static PT_THREAD (protothread_timer(struct pt *pt))
         printLine2(0, buffer, ILI9340_BLACK, ILI9340_YELLOW);
         sprintf(buffer, "heading=%.1f", psi_deg);
         printLine2(1, buffer, ILI9340_BLACK, ILI9340_YELLOW);
-        sprintf(buffer, "offset X=%.1f", Mag_X_offset);
+        sprintf(buffer, "theta=%.1f", theta_deg);
         printLine2(2, buffer, ILI9340_BLACK, ILI9340_YELLOW);
-        sprintf(buffer, "offset Y=%.1f", Mag_Y_offset);
+        sprintf(buffer, "Z offset=%.1f", Mag_Z_offset);
         
         // NEVER exit while
       } // END WHILE(1)
@@ -341,18 +341,18 @@ void main(void) {
   
   //CALCULATE MAGNETOMETER OFFSET
 
-  int i;
-  for (i=0; i<5000; i++){
-     
-      Mag_X_avg = Mag_X_avg - (beta*(Mag_X_avg-getMag_X()));
-      Mag_Y_avg = Mag_Y_avg - (beta*(Mag_Y_avg-getMag_Y()));
-      Mag_Z_avg = Mag_Z_avg - (beta*(Mag_Z_avg-getMag_Z()));
-      
-      Mag_X_offset+=(float)(Mag_X_avg/5000);
-      Mag_Y_offset+=(float)(Mag_Y_avg/5000);
-      Mag_Z_offset+=(float)(Mag_Z_avg/5000);
-  }
-  
+//  int i;
+//  for (i=0; i<5000; i++){
+//     
+//      //Mag_X_avg = Mag_X_avg - (beta*(Mag_X_avg-getMag_X()));
+//      //Mag_Y_avg = Mag_Y_avg - (beta*(Mag_Y_avg-getMag_Y()));
+//      Mag_Z_avg = Mag_Z_avg - (beta*(Mag_Z_avg-getMag_Z()));
+//      
+//      //Mag_X_offset+=(float)(Mag_X_avg/5000);
+//     // Mag_Y_offset+=(float)(Mag_Y_avg/5000);
+//      Mag_Z_offset+=(float)(Mag_Z_avg/5000);
+//  }
+//  
 
   // init the display
   // NOTE that this init assumes SPI channel 1 connections
@@ -369,5 +369,8 @@ void main(void) {
   } // main
 
 // === end  ======================================================
+
+
+
 
 
