@@ -88,9 +88,9 @@
  int Mag_Z_index;
  
  //CALIBRATING OFFSETS
- volatile float Mag_X_offset=-37.7;
- volatile float Mag_Y_offset=833.1;
- volatile float Mag_Z_offset=2000;
+ volatile float Mag_X_offset=0;//-37.7;
+ volatile float Mag_Y_offset=0;//833.1;
+ volatile float Mag_Z_offset=0;//2000;
  
  //CALCULATE PITCH, ROLL, AND YAW
  float theta; //PITCH
@@ -300,7 +300,7 @@ static PT_THREAD (protothread_timer(struct pt *pt))
         float bottom = ((Mag_Z_avg-Mag_Z_offset)*sin(theta))+((Mag_X_avg-Mag_X_offset)*cos(theta));
         float top = ((Mag_Y_avg-Mag_Y_offset)*cos(phi)-(Mag_Z_avg-Mag_Z_offset)*sin(phi)*cos(theta));
 
-        psi=atan2(top, bottom);
+        psi=atan2( top,bottom );
         psi_deg=psi*57.3;
         if (psi_deg<0){psi_deg+=360;}
     
@@ -341,18 +341,18 @@ void main(void) {
   
   //CALCULATE MAGNETOMETER OFFSET
 
-//  int i;
-//  for (i=0; i<5000; i++){
-//     
-//      //Mag_X_avg = Mag_X_avg - (beta*(Mag_X_avg-getMag_X()));
-//      //Mag_Y_avg = Mag_Y_avg - (beta*(Mag_Y_avg-getMag_Y()));
-//      Mag_Z_avg = Mag_Z_avg - (beta*(Mag_Z_avg-getMag_Z()));
-//      
-//      //Mag_X_offset+=(float)(Mag_X_avg/5000);
-//     // Mag_Y_offset+=(float)(Mag_Y_avg/5000);
-//      Mag_Z_offset+=(float)(Mag_Z_avg/5000);
-//  }
-//  
+  int i;
+  for (i=0; i<5000; i++){
+     
+      Mag_X_avg = Mag_X_avg - (beta*(Mag_X_avg-getMag_X()));
+      Mag_Y_avg = Mag_Y_avg - (beta*(Mag_Y_avg-getMag_Y()));
+      Mag_Z_avg = Mag_Z_avg - (beta*(Mag_Z_avg-getMag_Z()));
+      
+      Mag_X_offset+=(float)(Mag_X_avg/5000);
+      Mag_Y_offset+=(float)(Mag_Y_avg/5000);
+      Mag_Z_offset+=(float)(Mag_Z_avg/5000);
+  }
+
 
   // init the display
   // NOTE that this init assumes SPI channel 1 connections
