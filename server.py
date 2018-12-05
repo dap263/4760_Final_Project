@@ -6,9 +6,9 @@ import os
 # path_speech = cwd + "\andromeda.wav"
 
 # # setup csv
-# import csv_parser
-# csv_parser.setup_csv()
-# print('csv parsed')
+import csv_parser
+csv_parser.setup_csv()
+print('csv parsed')
 
 # setup TTS
 from comtypes.client import CreateObject
@@ -23,38 +23,6 @@ import struct
 from bitstring import BitArray, Bits
 import numpy as np
 import matplotlib.pyplot as plt
-# def do_TTS(msg):
-#     a = np.uint8()
-#     # should produce array of len 63*500
-#     # x = np.arange(0, 2000 * np.pi, .1)
-#     # y = np.sin(x)
-#     # # plt.plot(x,y)
-#     # # y = np.uint8(127*(y+1))
-#     # # take every other value
-#     # y = [ np.uint8(127*(y[i]+1)) for i in range(0, len(y), 4) ]
-#     # # plt.plot(x,y)
-#     # assert max(y) <= 255
-#     # assert min(y) >= 0
-#     y = []
-#     x = []
-#     # for i in range (30000):
-#     #     x.append(i)
-#     #     if i % 10 < 5:
-#     #         y.append(np.uint8(127 + 32))
-#     #     else:
-#     #         y.append(np.uint8(0 + 32))
-#     y = np.random.random_integers(32, 159, 20000)
-#     # plt.plot(x,y)
-#     z = []
-#     u8_str = ''
-#     # for i in range(len(y)):
-#         # z.append(BitArray('uintle:8='+str(y[i])))
-#         # z.append(Bits('uint:16=' + str(y[i])))
-#     #plt.plot(x,z)
-#     # plt.show()
-#     # u8_str = ''.join(a.bin+'\n' for a in z)
-#     ascii_str = ''.join(chr(a) for a in y)
-#     cltskt.send(ascii_str)
 
 # DAC chan A control bits '0b0011000000000000' # AKA 12288
 
@@ -73,23 +41,24 @@ def do_TTS(msg):
     stream.Close()
 #     # need to change this to temp if i want it to be overwritten each time
     f = wave.open("temp.wav", 'rb')
-#     # f.read(44) # strip off the wav header
-#     # downsample from 16 bit to 8 bit stream
-    # l = ''
     frames = f.readframes(f.getnframes())
-#     # temp = []
-#     # for i in range(0, len(frames), 2):
-#     #     temp[int(i/2)] = struct.unpack("<h", frames[i] + frames[i+1])
-#     #     l = l + '{}'.format((temp[i]>>7)+2**6)
-    
-#     # should this just be frames[i+1] to do the top 8 bits? 
-#     # frames = [ struct.unpack("<h", frames[i] + frames[i+1])[0] for i in range(0,len(frames),2) ]
     frames = [ struct.unpack("<h", frames[i] + frames[i+1])[0] for i in range(0,len(frames),2) ]
+    # change samp rate by changing last argument, 4 means 5.5 kHz
     frames = [ np.uint8( ( ( frames[i] + 2**15 ) >> 9 ) + 32 ) for i in range(0, len(frames),4) ]
-    t = np.linspace(0, 10000, f.getnframes())
+    ind = -1
+    for i in range(len(frames)):
+        if frames[i] != 0:
+            ind = i
+            break
+    frames = frames[ind-10:]
+    for i in range(len(frames)):
+        if (frames[len(frames)-i-1] != 0):
+            ind = i
+            break
+    frames = frames[:ind+20]
+    #t = np.linspace(0, 10000, f.getnframes())
+    # 7-bit ascii character offset by 32 to avoid control bits
     assert max(frames) <= 159 and min(frames) >= 32
-    # plt.plot(t, frames)
-    # plt.show()
     z = []
     for i in range(len(frames)):
         # if (i%4 != 0):
@@ -99,28 +68,6 @@ def do_TTS(msg):
     #u8_str = ''.join(str(a)+'\n' for a in frames)
     ascii_str = ''.join(chr(a) for a in frames)
     cltskt.send(ascii_str)
-#     # and then can just add 2**7 to center it in the positive range
-#     # frames = [ (frames[i]>>7)+2**6 for i in range(0, len(frames)) ]
-#     frames = [ np.uint8((frames[i]>>8) +2**7) for i in range(0, len(frames)) ]
-#     for i in range (len(frames)):
-#         l = l + str(frames[i])
-#     # for i in range (1450):
-#     #     if (i % 4 != 0):
-#     #         l = l + f.readframes(1)[1:]
-#     #     else: 
-#     #         f.readframes(1)
-#         #f.read(1)
-#     # l = l + '\r\n\r\n'
-#     while (frames):
-#         print 'sending'
-#         cltskt.send(l)
-#         l = ''
-#         frames = f.readframes(1000)
-#         frames = [ struct.unpack("<h", frames[i] + frames[i+1])[0] for i in range(0,len(frames),2) ]
-#         frames = [ (frames[i]>>8) +2**7 for i in range(0, len(frames)) ]
-#         for i in range (len(frames)):
-#             l = l + str(frames[i])
-#     f.close()
 #     print 'done sending'
 
 # base code taken from CS 4410 lecture with Robbert Van Renesse
@@ -140,6 +87,11 @@ while True:
     # cltskt.send(response ) # + body)
 
     if (msg.find('ra') != -1):
+        ind = msg.find(': ')
+        ind1 = msg.find(', ')
+        ind2 = msg.find('\r\n')
+        ra = float(msg[ind+2:ind1])
+        dec = float(msg[ind1+1:ind2])
         # need to change ra and dec to specific positions in get request
         csv_parser.search_csv(ra, dec)
     elif (msg.find('tts') != -1):
