@@ -612,7 +612,7 @@ do { static int i ; \
 #define pcr()    printf( '\r')
 #define crlf     putchar(0x0a); putchar(0x0d);
 #define backspace 0x7f // make sure your backspace matches this!
-#define max_chars_GPS 128 // for input/output buffer
+//#define max_chars_GPS 128 // for input/output buffer
 // PuTTY serial terminal control codes
 // see 
 // http://ascii-table.com/ansi-escape-sequences-vt-100.php
