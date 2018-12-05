@@ -11,7 +11,7 @@
 // clock AND protoThreads configure!
 // You MUST check this file!
 #include "config.h"
-#include "config_1_2_3.h"
+//m#include "config_1_2_3.h"
 // threading library
 #include "pt_cornell_1_2_3.h"
 // need for sin function
@@ -19,14 +19,14 @@
 
 ////////////////////////////////////
 // graphics libraries
-#include "tft_master.h"
-#include "tft_gfx.h"
+//#include "tft_master.h"
+//#include "tft_gfx.h"
 // need for rand function
 #include <stdlib.h>
 ////////////////////////////////////
 
 //#include "UART.h"
-#include "copied_uart.h"
+#include "GPS.h"
 
 
 /* Demo code for interfacing TFT (ILI9340 controller) to PIC32
@@ -48,7 +48,58 @@
   Written by Limor Fried/Ladyada for Adafruit Industries.
   MIT license, all text above must be included in any redistribution
  ****************************************************/
+// from TFT library for delay_ms
+#define PBCLK 40000000 // peripheral bus clock
+#define dTime_ms PBCLK/2000
 
+// --------- START I2C Stuff ----------------------
+ //Important  I2C Addresses
+#define KMX62_ADDR_W 0x1C
+#define KMX62_ADDR_R 0x1D
+
+#define ACCEL_XOUT_L 0x0A
+#define ACCEL_XOUT_H 0x0B
+#define ACCEL_YOUT_L 0x0C
+#define ACCEL_YOUT_H 0x0D
+#define ACCEL_ZOUT_L 0x0E
+#define ACCEL_ZOUT_H 0x0F
+
+#define MAG_XOUT_L 0x10
+#define MAG_XOUT_H 0x11
+#define MAG_YOUT_L 0x12
+#define MAG_YOUT_H 0x13
+#define MAG_ZOUT_L 0x14
+#define MAG_ZOUT_H 0x15
+
+#define CNTL2 0x3A
+
+#define CNTL2_DATA 0b00001111  //enable all sensors and set acceleration range to +-2g
+ 
+ //CALIBRATING OFFSETS
+ volatile float Mag_X_offset=0;//-37.7;
+ volatile float Mag_Y_offset=0;//833.1;
+ volatile float Mag_Z_offset=0;//2000;
+ 
+ //CALCULATE PITCH, ROLL, AND YAW
+ float theta; //PITCH
+ float theta_correct; // theta is inverted, this one is neg theta
+ float phi;   //ROLL
+ float psi;   //YAW
+ float phi_deg;
+ float theta_deg;
+ float psi_deg;
+ 
+ //FILTER RAW VALUES (DIGITAL LOWPASS)
+ float Accel_X_avg;
+ float Accel_Y_avg;
+ float Accel_Z_avg;
+ float Mag_X_avg;
+ float Mag_Y_avg;
+ float Mag_Z_avg;
+ float beta = .2; 
+ 
+// ----------------- END I2C STUFf ----------------
+ 
 // A-channel, 1x, active
 #define DAC_config_chan_A 0b0011000000000000
 // B-channel, 1x, active
@@ -66,6 +117,7 @@
 // Debouncing FSM variables
 volatile enum FSM_state {released, maybe_pushed, pushed, maybe_released} state = released; // FSM state
 volatile int possible; // Possible key press
+volatile int prior_fix; // boolean for GPS fix to talk
 
 // string buffer
 char buffer[60];
@@ -77,32 +129,31 @@ int acc_az;
 // === thread structures ============================================
 // thread control structs
 // note that UART input and output are threads
-static struct pt pt_gps, pt_input, pt_WiFi, pt_input2, pt_button;
+static struct pt pt_gps, pt_input, pt_WiFi, pt_input2, pt_button, pt_accel;
 
 // system 1 second interval tick
 volatile int sys_time_seconds ;
 
-// UNCOMMENT ONCE WE REMOVE TFT LIBRARY
-//void delay_ms(unsigned long i){
-///* Create a software delay about i ms long
-// * Parameters:
-// *      i:  equal to number of milliseconds for delay
-// * Returns: Nothing
-// * Note: Uses Core Timer. Core Timer is cleared at the initialiazion of
-// *      this function. So, applications sensitive to the Core Timer are going
-// *      to be affected
-// */
-//    unsigned int j;
-//    j = dTime_ms * i;
-//    WriteCoreTimer(0);
-//    while (ReadCoreTimer() < j);
-//}
+ //UNCOMMENT ONCE WE REMOVE TFT LIBRARY
+void delay_ms(unsigned long i){
+/* Create a software delay about i ms long
+ * Parameters:
+ *      i:  equal to number of milliseconds for delay
+ * Returns: Nothing
+ * Note: Uses Core Timer. Core Timer is cleared at the initialiazion of
+ *      this function. So, applications sensitive to the Core Timer are going
+ *      to be affected
+ */
+    unsigned int j;
+    j = dTime_ms * i;
+    WriteCoreTimer(0);
+    while (ReadCoreTimer() < j);
+}
 
 // === print a line on TFT =====================================================
 // print a line on the TFT
 // string buffer
-char buffer[60];
-
+/*
 void printLine(int line_number, char* print_buffer, short text_color, short back_color){
     // line number 0 to 31 
     /// !!! assumes tft_setRotation(0);
@@ -116,6 +167,99 @@ void printLine(int line_number, char* print_buffer, short text_color, short back
     tft_setTextSize(2);
     tft_writeString(print_buffer);
 }
+*/
+// ----------------- I2C Functions ----------------
+
+void i2c_wait(unsigned int cnt){
+    while(--cnt){
+        asm("nop");
+        asm("nop");
+    }
+}
+
+char i2c_read(char target){
+    char data;
+
+    StartI2C1(); //Send Start Condition
+    IdleI2C1(); 
+
+    MasterWriteI2C1(KMX62_ADDR_W); //Send Device Address (Write)
+    IdleI2C1(); 
+    while (I2C1STATbits.ACKSTAT); //wait for slave acknowledge
+
+    MasterWriteI2C1(target); //Send Register address the Master wants to read
+    IdleI2C1(); 
+    while (I2C1STATbits.ACKSTAT); //wait for slave acknowledge 
+
+    RestartI2C1(); //Restart 
+    i2c_wait(10);
+    IdleI2C1(); 
+
+    MasterWriteI2C1(KMX62_ADDR_R); //Send Device Address (Read)
+    IdleI2C1();
+    while (I2C1STATbits.ACKSTAT); //wait for slave acknowledge
+
+    data = MasterReadI2C1(); 
+    IdleI2C1();  
+    NotAckI2C1();
+    
+    StopI2C1();
+    IdleI2C1();
+    return data;
+}
+
+void i2c_write(char data,char target){
+    StartI2C1(); //Send Start Condition
+    IdleI2C1(); 
+
+    MasterWriteI2C1(KMX62_ADDR_W); //Send Device Address (Write)
+    IdleI2C1(); 
+    while (I2C1STATbits.ACKSTAT); //wait for slave acknowledge
+
+    MasterWriteI2C1(target); //Send Register address the Master wants to write
+    while (I2C1STATbits.ACKSTAT); //wait for slave acknowledge 
+    IdleI2C1(); 
+   
+    
+    MasterWriteI2C1(data); //write data
+    IdleI2C1();
+    while (I2C1STATbits.ACKSTAT); //wait for slave acknowledge
+    
+    StopI2C1();
+    IdleI2C1();
+}
+
+int getAccel_X(){
+   int Accel_X= (int)(i2c_read(ACCEL_XOUT_H)<<8)+(i2c_read(ACCEL_XOUT_L));
+   return Accel_X;
+}
+
+int getAccel_Y(){
+   int Accel_Y= (int)(i2c_read(ACCEL_YOUT_H)<<8)+(i2c_read(ACCEL_YOUT_L));
+   return Accel_Y;
+}
+
+int getAccel_Z(){
+   int Accel_Z= (int)(i2c_read(ACCEL_ZOUT_H)<<8)+(i2c_read(ACCEL_ZOUT_L));
+   return Accel_Z;
+}
+
+int getMag_X(){
+   int Mag_X= (int)(i2c_read(MAG_XOUT_H)<<8)+(i2c_read(MAG_XOUT_L));
+   return Mag_X;
+}
+
+int getMag_Y(){
+   int Mag_Y= (int)(i2c_read(MAG_YOUT_H)<<8)+(i2c_read(MAG_YOUT_L));
+   return Mag_Y;
+}
+
+int getMag_Z(){
+   int Mag_Z= (int)(i2c_read(MAG_ZOUT_H)<<8)+(i2c_read(MAG_ZOUT_L));
+   return Mag_Z;
+}
+
+// ----------------- End I2C Functions -------------
 
 void ESP_setup (void) {
     
@@ -145,6 +289,8 @@ void ESP_setup (void) {
     
 }
 
+// first part of message needs to be 'tts: ' or 'ra: '
+
 void ESP_request_data(char *message) {
     printf("\r\n");
     delay_ms(10);
@@ -158,7 +304,7 @@ void ESP_request_data(char *message) {
     delay_ms(10);
     printf("srv:on(\"connection\",function(sck,c)\r\n");
     delay_ms(10);
-    printf("sck:send(\"GET tts: %s\\r\\n HTTP /1.1\\r\\nHost: 192.168.43.1\\r\\nConnection: close\\r\\nAccept: */*\\r\\n\\r\\n\")\r\n", message);
+    printf("sck:send(\"GET %s\\r\\n HTTP /1.1\\r\\nHost: 192.168.43.1\\r\\nConnection: close\\r\\nAccept: */*\\r\\n\\r\\n\")\r\n", message);
     delay_ms(10);
     printf("end)\r\n");
     delay_ms(10);
@@ -222,6 +368,50 @@ void AltAz2RaDec(int alt, int az, float lat, float lon, int hours, int min, int 
     
 }
 
+// ======== Accelerometer thread =========
+static PT_THREAD (protothread_accel(struct pt *pt))
+{
+    PT_BEGIN(pt);
+
+      while(1) {
+        // yield time 1 second
+        PT_YIELD_TIME_msec(100) ;
+        
+        Accel_X_avg = Accel_X_avg - (beta*(Accel_X_avg-getAccel_X()));
+        Accel_Z_avg = Accel_Z_avg - (beta*(Accel_Z_avg-getAccel_Z()));
+        Accel_Y_avg = Accel_Y_avg - (beta*(Accel_Y_avg-getAccel_Y()));
+        Mag_X_avg = Mag_X_avg - (beta*(Mag_X_avg-getMag_X()));
+        Mag_Y_avg = Mag_Y_avg - (beta*(Mag_Y_avg-getMag_Y()));
+        Mag_Z_avg = Mag_Z_avg - (beta*(Mag_Z_avg-getMag_Z()));
+        
+        //ROLL
+        phi = atan2(Accel_Y_avg, Accel_Z_avg);
+        phi_deg = phi*57.3;
+        
+        //PITCH
+        theta = atan2(-Accel_X_avg,Accel_Y_avg*sin(phi)+Accel_Z_avg*cos(phi));
+        theta_deg = theta*57.3;
+        theta_correct = -theta_deg;
+        //YAW
+        float bottom = ((Mag_Z_avg-Mag_Z_offset)*sin(theta))+((Mag_X_avg-Mag_X_offset)*cos(theta));
+        float top = ((Mag_Y_avg-Mag_Y_offset)*cos(phi)-(Mag_Z_avg-Mag_Z_offset)*sin(phi)*cos(theta));
+
+        psi=atan2( top,bottom );
+        psi_deg=psi*57.3;
+        if (psi_deg<0){psi_deg+=360;}
+    
+        /*
+        printLine2(0, buffer, ILI9340_BLACK, ILI9340_YELLOW);
+        sprintf(buffer, "heading=%.1f", psi_deg);
+        printLine2(1, buffer, ILI9340_BLACK, ILI9340_YELLOW);
+        sprintf(buffer, "theta=%.1f", theta_deg);
+        printLine2(2, buffer, ILI9340_BLACK, ILI9340_YELLOW);
+        sprintf(buffer, "Z offset=%.1f", Mag_Z_offset);
+        */
+        // NEVER exit while
+      } // END WHILE(1)
+  PT_END(pt);
+} // accelerometer thread
 
 static PT_THREAD (protothread_GPS(struct pt *pt))
 {
@@ -233,12 +423,17 @@ static PT_THREAD (protothread_GPS(struct pt *pt))
     if (GPRMC == 1) {
         GPRMC = 0; //reset GPRMC flag
         parse_RMC(PT_term_buffer_GPS_RMC); //parse the GPRMC sentence
-        if (GPS_valid) {
-            sprintf(buffer, "Date: %d/%d/%d", GPS_month, GPS_day, GPS_year);
+        if (GPS_fix) {
+            if (!prior_fix){
+                // say GPS got a fix
+                prior_fix = 1;
+            }
+            AltAz2RaDec(acc_alt, acc_az, GPS_Lat, GPS_Lon, GPS_time_h, GPS_time_m, GPS_time_s, GPS_month, GPS_day, GPS_year);
+			/*
+			sprintf(buffer, "Date: %d/%d/%d", GPS_month, GPS_day, GPS_year);
             printLine(1, buffer, ILI9340_WHITE, ILI9340_BLACK);
             sprintf(buffer, "Time: %d:%d:%d", GPS_time_h, GPS_time_m, GPS_time_s);
             printLine(2, buffer, ILI9340_WHITE, ILI9340_BLACK);
-            AltAz2RaDec(acc_alt, acc_az, GPS_Lat, GPS_Lon, GPS_time_h, GPS_time_m, GPS_time_s, GPS_month, GPS_day, GPS_year);
             sprintf(buffer, "RA: %.3f", RA);
             printLine(3, buffer, ILI9340_WHITE, ILI9340_BLACK);
             sprintf(buffer, "DEC: %.3f", DEC);
@@ -247,8 +442,12 @@ static PT_THREAD (protothread_GPS(struct pt *pt))
             printLine(5, buffer, ILI9340_WHITE, ILI9340_BLACK);
             sprintf(buffer, "Lon: %.6f", GPS_Lon);
             printLine(6, buffer, ILI9340_WHITE, ILI9340_BLACK);
+			*/
         } else {
-            printLine(10, "Not Valid", ILI9340_WHITE, ILI9340_BLACK);
+            if (prior_fix){
+                // say GPS lost fix
+                prior_fix = 0;
+            }
         }
     } //end if
   }  
@@ -258,26 +457,13 @@ static PT_THREAD (protothread_GPS(struct pt *pt))
 static PT_THREAD (protothread_WiFi(struct pt *pt))
 {
   PT_BEGIN(pt);
-  int counter;
   // send commands to connect to server and receive speech
-  ESP_setup();
+  //ESP_setup();
   while (1) {
-    
-//    counter++;
-//    sprintf(buffer, "About to start %d", counter);
-//    printLine(0, buffer, ILI9340_WHITE, ILI9340_BLACK);
-//    sprintf(buffer, "%d", num_char);
-//    printLine(2, buffer, ILI9340_WHITE, ILI9340_BLACK);
-//    //DmaChnEnable(0);
-//    printLine(4, WiFi_Buffer, ILI9340_WHITE, ILI9340_BLACK);
+//    PT_SPAWN(pt, &pt_input2, PT_GetMachineBuffer(&pt_input2));
     
     
-    PT_SPAWN(pt, &pt_input2, PT_GetMachineBuffer(&pt_input2));
-    if (counter==40) {
-        
-    }
-    
-    //PT_YIELD_TIME_msec(10000);
+    //PT_YIELD_TIME_msec(1000);
   }  
   PT_END(pt);
 } // GPS thread
@@ -310,19 +496,30 @@ static PT_THREAD (protothread_button(struct pt *pt)) {
               // Potential button press
               if (button) {
                   state = pushed;
-                  AltAz2RaDec(acc_alt, acc_az, GPS_Lat, GPS_Lon, GPS_time_h, GPS_time_m, GPS_time_s, GPS_month, GPS_day, GPS_year); // Get RA and DEC currently viewed
-                  
+                  if (GPS_fix) {
+                    AltAz2RaDec(acc_alt, acc_az, GPS_Lat, GPS_Lon, GPS_time_h, GPS_time_m, GPS_time_s, GPS_month, GPS_day, GPS_year); // Get RA and DEC currently viewed
+                  }
+                  else {
+                      // no GPS fix, speak
+                  }
               } else {
                   state = released;
               }
               break;
           case pushed :
               // Confirmed button press - button still held
-              if (!button) {
+              if (!GPS_fix) {
+                  // no GPS fix, speak
+              } else if (!button) {
 //                  printf("sending request\r\n");
-                  ESP_request_data("you're looking at andromeda, bitch!");
+                  sprintf(buffer, "ra: %f, %f", RA, DEC);
+                  ESP_request_data(buffer);
+                  PT_SPAWN(pt, &pt_input2, PT_GetMachineBuffer(&pt_input2));
+                  //ESP_request_data("tts: you're looking at andromeda, bitch!");
                   state = released;
               }
+              if (!button) 
+                  state = released;
               break;
           case maybe_released :
               // Potential button release/change
@@ -343,24 +540,46 @@ void main(void) {
   
   // === config threads ==========
     
-    ANSELA = 0; ANSELB = 0;
+  ANSELA = 0; ANSELB = 0;
   PT_setup();
 
   // === setup system wide interrupts  ========
   INTEnableSystemMultiVectoredInt();
 
   // init the threads
-//  PT_INIT(&pt_gps);
-  PT_INIT(&pt_WiFi);
-//  PT_INIT(&pt_button);
-
+  PT_INIT(&pt_gps);
+  //PT_INIT(&pt_WiFi);
+  PT_INIT(&pt_button);
+  PT_INIT(&pt_accel);
+  
+  //I2C
+  OpenI2C1 (I2C_ON, 0x0C2);
+  IdleI2C1();
+  
+  //Set up KMX62
+  i2c_write (CNTL2_DATA, CNTL2);
+  
+  //CALCULATE MAGNETOMETER OFFSET
+  int i;
+  for (i=0; i<5000; i++){
+     
+      Mag_X_avg = Mag_X_avg - (beta*(Mag_X_avg-getMag_X()));
+      Mag_Y_avg = Mag_Y_avg - (beta*(Mag_Y_avg-getMag_Y()));
+      Mag_Z_avg = Mag_Z_avg - (beta*(Mag_Z_avg-getMag_Z()));
+      
+      Mag_X_offset+=(float)(Mag_X_avg/5000);
+      Mag_Y_offset+=(float)(Mag_Y_avg/5000);
+      Mag_Z_offset+=(float)(Mag_Z_avg/5000);
+  }
+  
+  /*
   // init the display
   tft_init_hw();
   tft_begin();
   tft_fillScreen(ILI9340_BLACK);
   //240x320 vertical display
   tft_setRotation(1); // Use tft_setRotation(1) for 320x240
-  
+  */
   // initialize buffer to be at half DAC output
 //  memset(WiFi_Buffer, 2048, sizeof(WiFi_Buffer));
   
@@ -387,10 +606,20 @@ void main(void) {
       // Transfer from DAC_data1 table to SPI2BUF, 256 bytes total, 2 at a time
   DmaChnSetEventControl(0, DMA_EV_START_IRQ(_TIMER_2_IRQ)); // Timer2 interrupt triggers DMA burst  
   
+  /* set up DMA channel 2 to playback error messages
+  DmaChnOpen(2,0,DMA_OPEN_DEFAULT); // Change default to auto // Auto mode to repeatedly send data
+  DmaChnSetTxfer(2, (void*) & GPS_error, (void*) & SPI2BUF, sizeof(GPS_error), 2, 2);
+      // Transfer from DAC_data1 table to SPI2BUF, 256 bytes total, 2 at a time
+  DmaChnSetEventControl(2, DMA_EV_START_IRQ(_TIMER_2_IRQ)); // Timer2 interrupt triggers DMA burst  
+  */
+  
+  ESP_setup();
+  
   // round-robin scheduler for threads
   while (1){
-//      PT_SCHEDULE(protothread_GPS(&pt_gps));
-      PT_SCHEDULE(protothread_WiFi(&pt_WiFi));
+	  PT_SCHEDULE(protothread_accel(&pt_accel));
+      PT_SCHEDULE(protothread_GPS(&pt_gps));
+      //PT_SCHEDULE(protothread_WiFi(&pt_WiFi));
       PT_SCHEDULE(protothread_button(&pt_button));
       }
   } // main
