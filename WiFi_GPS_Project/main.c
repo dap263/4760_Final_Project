@@ -294,6 +294,10 @@ void ESP_setup (void) {
 void ESP_request_data(char *message) {
     printf("\r\n");
     delay_ms(10);
+    printf("print(wifi.sta.getip())");
+    // need to read back uart and check for nil, but should prob not use WiFi_Buffer
+    delay_ms(10);
+    DmaChnSetTxfer(2, (void*) & WiFi_nc, (void*) & SPI2BUF, sizeof(WiFi_nc), 2, 2);
     printf("i = 0\r\n");
     delay_ms(10);
     printf("srv=net.createConnection(net.TCP,0)\r\n");
@@ -426,6 +430,7 @@ static PT_THREAD (protothread_GPS(struct pt *pt))
         if (GPS_fix) {
             if (!prior_fix){
                 // say GPS got a fix
+                DmaChnSetTxfer(2, (void*) & GPS_fix, (void*) & SPI2BUF, sizeof(GPS_fix), 2, 2);
                 prior_fix = 1;
             }
             AltAz2RaDec(acc_alt, acc_az, GPS_Lat, GPS_Lon, GPS_time_h, GPS_time_m, GPS_time_s, GPS_month, GPS_day, GPS_year);
@@ -446,6 +451,7 @@ static PT_THREAD (protothread_GPS(struct pt *pt))
         } else {
             if (prior_fix){
                 // say GPS lost fix
+                DmaChnSetTxfer(2, (void*) & GPS_error, (void*) & SPI2BUF, sizeof(GPS_error), 2, 2);
                 prior_fix = 0;
             }
         }
@@ -500,6 +506,7 @@ static PT_THREAD (protothread_button(struct pt *pt)) {
                     AltAz2RaDec(acc_alt, acc_az, GPS_Lat, GPS_Lon, GPS_time_h, GPS_time_m, GPS_time_s, GPS_month, GPS_day, GPS_year); // Get RA and DEC currently viewed
                   }
                   else {
+                      DmaChnSetTxfer(2, (void*) & GPS_error, (void*) & SPI2BUF, sizeof(GPS_error), 2, 2);
                       // no GPS fix, speak
                   }
               } else {
@@ -509,6 +516,7 @@ static PT_THREAD (protothread_button(struct pt *pt)) {
           case pushed :
               // Confirmed button press - button still held
               if (!GPS_fix) {
+                  DmaChnSetTxfer(2, (void*) & GPS_error, (void*) & SPI2BUF, sizeof(GPS_error), 2, 2);
                   // no GPS fix, speak
               } else if (!button) {
 //                  printf("sending request\r\n");
@@ -602,16 +610,20 @@ void main(void) {
   SpiChnOpen(SPI_CHANNEL2, SPI_OPEN_ON | SPI_OPEN_MODE16 | SPI_OPEN_MSTEN | SPI_OPEN_CKE_REV | SPICON_FRMEN | SPICON_FRMPOL, 2);
   // Initializes SPI in framed mode
   DmaChnOpen(0,0,DMA_OPEN_DEFAULT); // Change default to auto // Auto mode to repeatedly send data
+  DmaChnSetEventControl(DMA_CHANNEL0, DMA_EV_START_IRQ_EN|DMA_EV_MATCH_EN);
   DmaChnSetTxfer(0, (void*) & WiFi_Buffer, (void*) & SPI2BUF, sizeof(WiFi_Buffer), 2, 2);
       // Transfer from DAC_data1 table to SPI2BUF, 256 bytes total, 2 at a time
+  // new, not sure if it is right, but should trigger interrupt on end of block
+  DmaChnSetEvEnableFlags(DMA_CHANNEL0, DMA_EV_BLOCK_DONE);
+  DmaChnSetMatchPattern(DMA_CHANNEL0, '\a');
   DmaChnSetEventControl(0, DMA_EV_START_IRQ(_TIMER_2_IRQ)); // Timer2 interrupt triggers DMA burst  
-  
-  /* set up DMA channel 2 to playback error messages
+
+  // set up DMA channel 2 to playback error messages
   DmaChnOpen(2,0,DMA_OPEN_DEFAULT); // Change default to auto // Auto mode to repeatedly send data
-  DmaChnSetTxfer(2, (void*) & GPS_error, (void*) & SPI2BUF, sizeof(GPS_error), 2, 2);
+  DmaChnSetTxfer(2, (void*) & Calibration, (void*) & SPI2BUF, sizeof(Calibration), 2, 2);
       // Transfer from DAC_data1 table to SPI2BUF, 256 bytes total, 2 at a time
   DmaChnSetEventControl(2, DMA_EV_START_IRQ(_TIMER_2_IRQ)); // Timer2 interrupt triggers DMA burst  
-  */
+  DmaChnEnable(2);
   
   ESP_setup();
   
