@@ -1,6 +1,6 @@
 /*
- * File:        main.c
- * Author:      David Pirogovsky, Alec Newport, and Phillip Douglas
+ * File:        TFT_test_BRL4.c
+ * Author:      Bruce Land
  * Adapted from:
  *              main.c by
  * Author:      Syed Tahmid Mahbub
@@ -400,7 +400,7 @@ static PT_THREAD (protothread_GPS(struct pt *pt))
                 DmaChnSetTxfer(2, (void*) & GPS_fix, (void*) & SPI2BUF, sizeof(GPS_fix), 2, 2);
                 prior_fix = 1;
             }
-            AltAz2RaDec(acc_alt, acc_az, GPS_Lat, GPS_Lon, GPS_time_h, GPS_time_m, GPS_time_s, GPS_month, GPS_day, GPS_year);
+            AltAz2RaDec(theta_correct, psi_deg, GPS_Lat, GPS_Lon, GPS_time_h, GPS_time_m, GPS_time_s, GPS_month, GPS_day, GPS_year);
         } else {
             if (prior_fix){
                 // say GPS lost fix
@@ -455,7 +455,7 @@ static PT_THREAD (protothread_button(struct pt *pt)) {
               if (button) {
                   state = pushed;
                   if (GPS_fix) {
-//                    AltAz2RaDec(acc_alt, acc_az, GPS_Lat, GPS_Lon, GPS_time_h, GPS_time_m, GPS_time_s, GPS_month, GPS_day, GPS_year); // Get RA and DEC currently viewed
+                    AltAz2RaDec(theta_correct, psi_deg, GPS_Lat, GPS_Lon, GPS_time_h, GPS_time_m, GPS_time_s, GPS_month, GPS_day, GPS_year); // Get RA and DEC currently viewed
                   }
                   else {
 //                      DmaChnSetTxfer(2, (void*) & GPS_error, (void*) & SPI2BUF, sizeof(GPS_error), 2, 2);
