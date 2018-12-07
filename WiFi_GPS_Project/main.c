@@ -387,7 +387,7 @@ static PT_THREAD (protothread_GPS(struct pt *pt))
 {
   PT_BEGIN(pt);
   while (1) {
-      PT_YIELD_TIME_msec(100);
+      PT_YIELD_TIME_msec(800);
       PT_SPAWN(pt, &pt_input, PT_GetSerialBufferGPS(&pt_input));
 //    printLine(1, PT_term_buffer_GPS_RMC, ILI9340_WHITE, ILI9340_BLACK);
     // if received sentence is in GPRMC format
@@ -398,6 +398,7 @@ static PT_THREAD (protothread_GPS(struct pt *pt))
             if (!prior_fix){
                 // say GPS got a fix
                 DmaChnSetTxfer(2, (void*) & GPS_fix, (void*) & SPI2BUF, sizeof(GPS_fix), 2, 2);
+                DmaChnEnable(2);
                 prior_fix = 1;
             }
             AltAz2RaDec(theta_correct, psi_deg, GPS_Lat, GPS_Lon, GPS_time_h, GPS_time_m, GPS_time_s, GPS_month, GPS_day, GPS_year);
@@ -422,6 +423,7 @@ static PT_THREAD (protothread_WiFi(struct pt *pt))
   ESP_setup();
   while (1) {
     PT_SPAWN(pt, &pt_input2, PT_GetMachineBuffer(&pt_input2));
+    PT_YIELD_TIME_msec(50);
   }  
   PT_END(pt);
 } // GPS thread
