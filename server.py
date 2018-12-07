@@ -26,7 +26,7 @@ import matplotlib.pyplot as plt
 
 # DAC chan A control bits '0b0011000000000000' # AKA 12288
 
-def do_TTS(msg):
+def do_TTS(msg, req_type):
     print('starting tts')
     engine = CreateObject("SAPI.SpVoice")
     stream = CreateObject("SAPI.SpFileStream")
@@ -34,9 +34,13 @@ def do_TTS(msg):
     stream.Open('temp.wav', SpeechLib.SSFMCreateForWrite)
     engine.AudioOutputStream = stream
     # need to parse request to find requested message
-    ind = msg.find(': ')
-    ind1 = msg.find('\r\n')
-    word = msg[ind+2:ind1]
+    if (req_type == 1):
+        ind = msg.find(': ')
+        ind1 = msg.find('\r\n')
+        word = msg[ind+2:ind1]
+    else:
+        print(msg)
+        word = msg
     engine.speak(word, 0)
     stream.Close()
 #     # need to change this to temp if i want it to be overwritten each time
@@ -47,15 +51,16 @@ def do_TTS(msg):
     frames = [ np.uint8( ( ( frames[i] + 2**15 ) >> 9 ) + 32 ) for i in range(0, len(frames),4) ]
     ind = -1
     for i in range(len(frames)):
-        if frames[i] != 0:
+        # whatever value zero is encoded as
+        if frames[i] != 96:
             ind = i
             break
-    frames = frames[ind-10:]
+    #frames = frames[ind-10:]
     for i in range(len(frames)):
-        if (frames[len(frames)-i-1] != 0):
+        if (frames[len(frames)-i-1] != 96):
             ind = i
             break
-    frames = frames[:ind+20]
+    # frames = frames[:ind+20]
     #t = np.linspace(0, 10000, f.getnframes())
     # 7-bit ascii character offset by 32 to avoid control bits
     assert max(frames) <= 159 and min(frames) >= 32
@@ -87,14 +92,17 @@ while True:
     # cltskt.send(response ) # + body)
 
     if (msg.find('ra') != -1):
+        print('starting db')
         ind = msg.find(': ')
         ind1 = msg.find(', ')
         ind2 = msg.find('\r\n')
         ra = float(msg[ind+2:ind1])
         dec = float(msg[ind1+1:ind2])
         # need to change ra and dec to specific positions in get request
-        csv_parser.search_csv(ra, dec)
+        word = csv_parser.search_csv(ra, dec)
+        print(word)
+        do_TTS(word, 0)
     elif (msg.find('tts') != -1):
-        do_TTS(msg)
+        do_TTS(msg, 1)
     
     cltskt.close()
