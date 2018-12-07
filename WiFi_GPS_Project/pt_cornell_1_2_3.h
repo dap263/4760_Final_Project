@@ -644,7 +644,7 @@ do { static int i ; \
 //char PT_term_buffer_WiFi[max_chars_WiFi];
 char PT_terminate_char = '\a';
 char PT_terminate_count ;
-char DMA_continue_char = '\p';
+char DMA_start_char = '\b';
 // terminate time default million seconds
 int PT_terminate_time = 1000000000 ;
 // timeout return value
@@ -655,11 +655,10 @@ volatile unsigned int time_tick_millsec ;
 volatile unsigned int num_char = 0;
 #define DAC_CONTROL 12288
 #define CONTROL_BIT_OFFSET 32
-#define UART_GAIN 6
+#define UART_GAIN 4
 #define CENTER_BIAS 2047
 
 unsigned short WiFi_Buffer[max_chars_WiFi];
-
 // Get char from UART, OR with DMA control bits, subtract 32, left shift by 4 to make louder
 
 int PT_GetMachineBuffer(struct pt *pt)
@@ -675,7 +674,6 @@ int PT_GetMachineBuffer(struct pt *pt)
     start_time = time_tick_millsec ;
     // clear timeout flag
     num_char = 0; //num_char = num_char % max_chars_WiFi;
-    
     PT_timeout = 0;
     // clear input buffer
 //    memset(PT_term_buffer_WiFi, 0, max_chars_WiFi);
@@ -703,35 +701,19 @@ int PT_GetMachineBuffer(struct pt *pt)
                 //((PT_terminate_time>0) && (time_tick_millsec >= PT_terminate_time+start_time)));
         character = UARTGetDataByte(UART2);
         
-        if ((character>0) && (character == DMA_continue_char)) {
+        if ((character>0) && (character == DMA_start_char)) {
 //            PT_term_buffer_WiFi[num_char] = 0; // zero terminate the string
-            //DmaChnEnable(0);
-            if (pkt_cnt % 2 == 1) {
-              DmaChnOpen(1,0,DMA_OPEN_DEFAULT); // Change default to auto // Auto mode to repeatedly send data
-              DmaChnSetEventControl(DMA_CHANNEL1, DMA_EV_START_IRQ_EN|DMA_EV_MATCH_EN);
-              DmaChnSetTxfer(1, (void*) & WiFi_Buffer, (void*) & SPI2BUF, sizeof(WiFi_Buffer), 2, 2);
-                  // Transfer from DAC_data1 table to SPI2BUF, 256 bytes total, 2 at a time
-              // new, not sure if it is right, but should trigger interrupt on end of block
-              DmaChnSetEvEnableFlags(DMA_CHANNEL1, DMA_EV_BLOCK_DONE);
-              // need to set this to DMA_CHANNEL0 end DmaChnGetEvFlags
-              DmaChnSetMatchPattern(DMA_CHANNEL1, DmaChnGetEvFlags);
-              DmaChnSetEventControl(1, DMA_EV_START_IRQ(_TIMER_2_IRQ)); // Timer2 interrupt triggers DMA burst  
-            }
-            else {
-              // set up CHN0 to be chained to CHN1
-            }
-            //WiFi_Buffer[num_char] = 0;
-            // and leave the while loop
+            DmaChnEnable(0);
             //break;
         }    
         // Terminate on character match
         else if ((character>0) && (character == PT_terminate_char)) {
 //            PT_term_buffer_WiFi[num_char] = 0; // zero terminate the string
-            //DmaChnEnable(0);
-            //WiFi_Buffer[num_char] = 0;
+            DmaChnEnable(0);
+            WiFi_Buffer[num_char] = 0;
             // and leave the while loop
-            break;
-        }    
+           break;
+        } 
         // Terminate on count
         else if ( ((PT_terminate_count>0) && (num_char+1 >= PT_terminate_count))){
             // record the last character
@@ -740,7 +722,7 @@ int PT_GetMachineBuffer(struct pt *pt)
             WiFi_Buffer[num_char++] = ((buffer_entry << UART_GAIN) + CENTER_BIAS) | DAC_CONTROL;
             // and terminate
 //            PT_term_buffer_WiFi[num_char] = 0; // zero terminate the string
-            //WiFi_Buffer[num_char] = 0;
+            WiFi_Buffer[num_char] = 0;
             // and leave the while loop
             break;
         }
@@ -773,7 +755,7 @@ int PT_GetMachineBuffer(struct pt *pt)
 
 //====================================================================
 // === send a string to the UART2 ====================================
-#define max_chars_WiFi_send 256
+#define max_chars_WiFi_send 64
 char PT_send_buffer_WiFi[max_chars_WiFi_send];
 int num_send_chars ;
 int PutSerialBuffer(struct pt *pt)

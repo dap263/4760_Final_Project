@@ -1,12 +1,12 @@
 /* 
- * File:   copied_uart.h
+ * File:   GPS.h
  * Author: Alec
  *
  * Created on November 16, 2018, 12:42 PM
  */
 
-#ifndef COPIED_UART_H
-#define	COPIED_UART_H
+#ifndef GPS_H
+#define	GPS_H
 
 #ifdef	__cplusplus
 extern "C" {
@@ -139,6 +139,7 @@ float GPS_Lon;	// Longitude in degrees (positive = East, negative = West)
 char GPS_type[6];	
 int  GPS_quality;	
 char GPS_valid; // A=active, V=void
+int GPS_fix;    // boolean, does GPS have a fix
 int GPS_time_h; // UTC time hours
 int GPS_time_m; // UTC time minutes
 int GPS_time_s;	// UTC time seconds
@@ -159,7 +160,7 @@ void parse_RMC(char* PT_term_buffer_GPS) {
             &GPS_mag_var, &GPS_mag_var_WE, &GPS_checksum);
     
     // Convert from valid 'A'/'V' to true/false
-    GPS_valid = GPS_valid == 'A';
+    GPS_fix = GPS_valid == 'A';
     
     // Convert from ddmm.m to d.d format for latitude and longitude
     int GPS_Lat_deg, GPS_Lon_deg; // Temp variables
@@ -215,5 +216,5 @@ void parse_RMC(char* PT_term_buffer_GPS) {
 }
 #endif
 
-#endif	/* COPIED_UART_H */
+#endif	/* GPS_H */
 
