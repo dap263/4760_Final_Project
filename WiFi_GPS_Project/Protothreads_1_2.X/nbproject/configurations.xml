@@ -4,12 +4,11 @@
     <logicalFolder name="HeaderFiles"
                    displayName="Header Files"
                    projectFiles="true">
-      <itemPath>../tft_gfx.h</itemPath>
-      <itemPath>../tft_master.h</itemPath>
-      <itemPath>../port_expander_brl4.h</itemPath>
       <itemPath>../config_1_2_3.h</itemPath>
       <itemPath>../pt_cornell_1_2_3.h</itemPath>
-      <itemPath>../UART.h</itemPath>
+      <itemPath>../../../4760_Final_Project-master/WiFi_GPS_Project/Error_messages.h</itemPath>
+      <itemPath>../GPS.h</itemPath>
+      <itemPath>../config.h</itemPath>
     </logicalFolder>
     <logicalFolder name="LinkerScript"
                    displayName="Linker Files"
@@ -18,9 +17,6 @@
     <logicalFolder name="SourceFiles"
                    displayName="Source Files"
                    projectFiles="true">
-      <itemPath>../tft_gfx.c</itemPath>
-      <itemPath>../tft_master.c</itemPath>
-      <itemPath>../port_expander_brl4.c</itemPath>
       <itemPath>../main.c</itemPath>
     </logicalFolder>
     <logicalFolder name="ExternalFiles"
@@ -35,6 +31,7 @@
     <Elem>../../Neural_model_pt_1_2</Elem>
     <Elem>../../z_analysis_pt_1_2</Elem>
     <Elem>../../Big_board_pt_1_2_expander</Elem>
+    <Elem>../../../4760_Final_Project-master/WiFi_GPS_Project</Elem>
   </sourceRootList>
   <projectmakefile>Makefile</projectmakefile>
   <confs>
