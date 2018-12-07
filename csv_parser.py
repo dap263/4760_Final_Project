@@ -1,5 +1,5 @@
 import csv
-
+import math
 path = r"G:\My Drive\Classes\4760\Final Project\hygdata_v3.csv"
 ID, hip, hd, hr, gl = [], [], [], [], []
 bf, proper, ra, dec, dist = [], [], [], [], []
@@ -8,7 +8,13 @@ spect, ci, x, y, z = [], [], [], [], []
 vx, vy, vz, rarad, decrad = [], [], [], [], []
 pmrarad, pmdecrad, bayer, flam, con = [], [], [], [], []
 comp, comp_primary, base, lum, var, var_min, var_max = [], [], [], [], [], [], []
-con_full_name = {} # make dict from abbreviated names in con to full names
+x_abs, y_abs, z_abs = [], [], []
+# con_full_name = {'':'none', 'Sgr':, 'Lac':, 'Lib':, 'Mic':, 'PsA':, 'Per':, 'Aur':, 'CMa':,
+#  'Pav':, 'Peg':, 'CVn':, 'Gru':'Grus', 'Her':, 'CMi':, 'Aqr':, 'Psc':, 
+#  'Phe':, 'Eri':'Eridanus', 'Lep':, 'Cet':, 'UMa':, 'Mon':, 'Ori':, 'Cyg':, 
+#  'UMi':, 'Leo':, 'Gem':, 'Hya':, 'Oph':, 'Crv':, 'Cru':, 'Cas':, 
+#  'Car':, 'Cep':, 'CrB':, 'Boo':, 'Dra':, 'Col':, 'And':, 'Tau':, 
+#  'Sco':, 'Ser':, 'Lyr':, 'TrA':, 'Pup':, 'Pic':, 'Vir':, 'Aql':, 'Cen':, 'Ari':} # make dict from abbreviated names in con to full names
 # call this to convert the csv into arrays grouped by columns
 def setup_csv():
     with open(path) as csvfile:
@@ -53,28 +59,28 @@ def setup_csv():
                 var_min.append(row['var_min'])
                 var_max.append(row['var_max'])
     for i in range (len(dec)):
-        x_abs.append(sin(dec)*cos(ra*15))
-        y_abs.append(sin(dec)*cos(ra*15))
-        z_abs.append(cos(dec))
+        x_abs.append(math.sin(float(dec[i]))*math.cos(float(ra[i])*15))
+        y_abs.append(math.sin(float(dec[i]))*math.cos(float(ra[i])*15))
+        z_abs.append(math.cos(float(dec[i])))
 
 # search through arrays
 def search_csv(ra_in, dec_in):
-    x_temp.append(sin(dec_in)*cos(ra_in*15))
-    y_temp.append(sin(dec_in)*cos(ra_in*15))
-    z_temp.append(cos(dec_in))
+    x_temp = (math.sin(float(dec_in))*math.cos(float(ra_in)*15))
+    y_temp = (math.sin(float(dec_in))*math.cos(float(ra_in)*15))
+    z_temp = (math.cos(float(dec_in)))
     min_ = 2**31
     ind = -1
     for i in range(len(x_abs)):
-        x = abs(x_abs-x_temp)
-        y = abs(y_abs-y_temp)
-        z = abs(z_abs-z_temp)
+        x = abs(x_abs[i]-x_temp)
+        y = abs(y_abs[i]-y_temp)
+        z = abs(z_abs[i]-z_temp)
         if (x + y + z < min_):
             min_ = x + y + z
             ind = i
     if (ind == -1):
         return 'error, nothing found'
     else:
-        return proper[ind]
+        return (proper[ind] + 'is in' + con[ind])
 
-setup_csv()
-print ID
+# setup_csv()
+# print ID
