@@ -216,5 +216,5 @@ void parse_RMC(char* PT_term_buffer_GPS) {
 }
 #endif
 
-#endif	/* COPIED_UART_H */
+#endif	/* GPS_H */
 
