@@ -1,6 +1,6 @@
 import wave
 import struct
-f = wave.open("Calibration.wav", 'rb')
+f = wave.open("GPS_error.wav", 'rb')
 frames = f.readframes(f.getnframes())
 frames = [ struct.unpack("<h", frames[i] + frames[i+1])[0] for i in range(0,len(frames),2) ]
 assert min(frames) >= -(2**14) and max(frames) <= 2**14
@@ -14,8 +14,9 @@ for i in range(len(frames)):
     if frames[i] != zero:
         ind = i
         break
+print ind
 ind = -1
-frames = frames[ind-10:]
+#frames = frames[ind-10:]
 # zeroing stuff doesn't always work
 for i in range(len(frames)):
     if (frames[len(frames)-i-1] != zero):
@@ -23,17 +24,17 @@ for i in range(len(frames)):
         break
 if (ind == -1):
     print('error')
-    assert ind == 0
+    #assert ind == 0
 # comment this out to prevent incorrect zeroing
 #frames = frames[:ind+20]
 
 with open('Error_messages.h', 'a') as f:
     f.write("\n")
-    f.write("short Calibration = [")
+    f.write("static const unsigned short GPS_error[] = {")
     count = 0
     for item in frames:
         if (count % 20 == 0):
             f.write("\n")
         count += 1
         f.write("%s, " % item)
-    f.write("];")
+    f.write("};")
