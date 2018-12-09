@@ -1,6 +1,8 @@
 # 4760 Final Project
 Constellation Glasses
 
+This project was designed and executed by David Pirogovsky, Alec Newport and Phillip Douglas. For more information, go to the ECE 4760 homepage (http://people.ece.cornell.edu/land/courses/ece4760/) and navigate to the final projects page, then search for constellation glasses. 
+
 WiFi_GPS_Project Folder contains everything needed to open an MPLAB Project. Currently has a lot of unnecessary files in it, but most important files are pt_cornell_1_2_3.h, main.c, and GPS.h. 
 
 init.lua is loaded on the ESP, and the other lua code is example code from the main NodeMCU github that I modified or a set of basic commands to send to the ESP. Error_messages.h contains conversions of the wave files to arrays of unsigned shorts (ORed with the DAC control bits, 12288), to be used as spoken error messages. They were created using the wav_to_header.py script. 
