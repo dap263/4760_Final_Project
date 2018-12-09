@@ -34,13 +34,13 @@ def do_TTS(msg, req_type):
     stream.Open('temp.wav', SpeechLib.SSFMCreateForWrite)
     engine.AudioOutputStream = stream
     # need to parse request to find requested message
-    if (req_type == 1):
+    if (req_type == 0):
+        print(msg)
+        word = msg
+    else:
         ind = msg.find(': ')
         ind1 = msg.find('\r\n')
         word = msg[ind+2:ind1]
-    else:
-        print(msg)
-        word = msg
     engine.speak(word, 0)
     stream.Close()
 #     # need to change this to temp if i want it to be overwritten each time

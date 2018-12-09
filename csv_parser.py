@@ -80,7 +80,7 @@ def search_csv(ra_in, dec_in):
     if (ind == -1):
         return 'error, nothing found'
     else:
-        return (proper[ind] + 'is in' + con[ind])
+        return (proper[ind] + ' is in, ' + con[ind])
 
 # setup_csv()
 # print ID
