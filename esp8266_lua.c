@@ -4,8 +4,8 @@
 wifi.setmode(wifi.STATION)
 delay(1000)
 station_cfg = {}
-station_cfg.ssid="FBI"
-station_cfg.pwd="verystrong"
+station_cfg.ssid="access point name"
+station_cfg.pwd="password"
 station_cfg.save=true
 wifi.sta.config(station_cfg)
 wifi.sta.connect()
