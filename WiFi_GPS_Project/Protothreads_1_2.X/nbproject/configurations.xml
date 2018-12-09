@@ -6,7 +6,6 @@
                    projectFiles="true">
       <itemPath>../config_1_2_3.h</itemPath>
       <itemPath>../pt_cornell_1_2_3.h</itemPath>
-      <itemPath>../../../4760_Final_Project-master/WiFi_GPS_Project/Error_messages.h</itemPath>
       <itemPath>../GPS.h</itemPath>
       <itemPath>../config.h</itemPath>
     </logicalFolder>
