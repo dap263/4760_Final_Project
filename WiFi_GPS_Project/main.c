@@ -11,7 +11,7 @@
 // clock AND protoThreads configure!
 // You MUST check this file!
 #include "config.h"
-//m#include "config_1_2_3.h"
+#include "config_1_2_3.h"
 // threading library
 #include "pt_cornell_1_2_3.h"
 // need for sin function
@@ -24,11 +24,11 @@
 // need for rand function
 #include <stdlib.h>
 ////////////////////////////////////
-
-//#include "UART.h"
+// contains short arrays for DAC speech output
+#include "Error_messages.h"
+#include "plib.h"
 #include "GPS.h"
 
-//#include "Error_messages.h"
 
 /* Demo code for interfacing TFT (ILI9340 controller) to PIC32
  * The library has been modified from a similar Adafruit library
@@ -49,9 +49,25 @@
   Written by Limor Fried/Ladyada for Adafruit Industries.
   MIT license, all text above must be included in any redistribution
  ****************************************************/
-// from TFT library for delay_ms
-#define PBCLK 40000000 // peripheral bus clock
+
+// A-channel, 1x, active
+#define DAC_config_chan_A 0b0011000000000000
+// B-channel, 1x, active
+#define DAC_config_chan_B 0b1011000000000000
+
+// pullup macro
+#define EnablePullUpA(bits) CNPDACLR=bits; CNPUASET=bits;
+
+// Constants for conversion in AltAz2RaDec
+#define RAD2DEG 57.295779513082320876798154814105
+#define DEG2RAD 0.01745329251994329576923690768489
+#define RAD2HOURANGLE 3.8197186342054880584532103209403
+
+// Pulldown macro
+#define EnablePullDownB(bits) CNPUBCLR=bits; CNPDBSET=bits;
+// taken from TFT library for delay_ms
 #define dTime_ms PBCLK/2000
+#define PBCLK 40000000 // peripheral bus clock
 
 // --------- START I2C Stuff ----------------------
  //Important  I2C Addresses
@@ -100,25 +116,11 @@
  float beta = .2; 
  
 // ----------------- END I2C STUFf ----------------
- 
-// A-channel, 1x, active
-#define DAC_config_chan_A 0b0011000000000000
-// B-channel, 1x, active
-#define DAC_config_chan_B 0b1011000000000000
-
-#define EnablePullUpA(bits) CNPDACLR=bits; CNPUASET=bits;
-
-#define RAD2DEG 57.295779513082320876798154814105
-#define DEG2RAD 0.01745329251994329576923690768489
-#define RAD2HOURANGLE 3.8197186342054880584532103209403
-
-// Pulldown macro
-#define EnablePullDownB(bits) CNPUBCLR=bits; CNPDBSET=bits;
 
 // Debouncing FSM variables
 volatile enum FSM_state {released, maybe_pushed, pushed, maybe_released} state = released; // FSM state
-volatile short possible; // Possible key press
-volatile short prior_fix; // boolean for GPS fix to talk
+volatile int possible; // Possible key press
+volatile int prior_fix; // boolean for GPS fix to talk
 
 // string buffer
 char buffer[60];
@@ -132,10 +134,7 @@ int acc_az;
 // note that UART input and output are threads
 static struct pt pt_gps, pt_input, pt_WiFi, pt_input2, pt_button, pt_accel;
 
-// system 1 second interval tick
-volatile int sys_time_seconds ;
-
- //UNCOMMENT ONCE WE REMOVE TFT LIBRARY
+// Copied directly from the TFT library
 void delay_ms(unsigned long i){
 /* Create a software delay about i ms long
  * Parameters:
@@ -151,24 +150,6 @@ void delay_ms(unsigned long i){
     while (ReadCoreTimer() < j);
 }
 
-// === print a line on TFT =====================================================
-// print a line on the TFT
-// string buffer
-/*
-void printLine(int line_number, char* print_buffer, short text_color, short back_color){
-    // line number 0 to 31 
-    /// !!! assumes tft_setRotation(0);
-    // print_buffer is the string to print
-    int v_pos;
-    v_pos = line_number * 20 ;
-    // erase the pixels
-    tft_fillRoundRect(0, v_pos, 319, 16, 1, back_color);// x,y,w,h,radius,color
-    tft_setTextColor(text_color); 
-    tft_setCursor(0, v_pos);
-    tft_setTextSize(2);
-    tft_writeString(print_buffer);
-}
-*/
 // ----------------- I2C Functions ----------------
 
 void i2c_wait(unsigned int cnt){
@@ -262,51 +243,65 @@ int getMag_Z(){
 
 // ----------------- End I2C Functions -------------
 
+// called once on initializing wifi thread to initialize ESP for receiving requests and 
+// streaming them correctly 
 void ESP_setup (void) {
-    
+    // send a newline
     printf("\r\n");
+    // define a callback for the end of a transmission
     printf("function cb_disconnected()\r\n");
-//    delay_ms(100);
-//    printf("print(\"wassup dog\")\r\n");
+    // wait for lua interpreter to process 
     delay_ms(100);
+    // send ascii control character to signal end of packet
     printf("print(\"\\a\")\r\n");
     delay_ms(100);
     printf("end\r\n");
     delay_ms(100);
+    // define a callback for what to do with each packet
     printf("function cb_connected(sck, c)\r\n");
     delay_ms(100);
+    // send the contents of the packet over uart
     printf("print(c)\r\n");
     delay_ms(100);
+    // send the dma start character after sending the contents of the first packet
     printf("if (i == 0) then\r\n");
     delay_ms(100);
     printf("print(\"\\b\")\r\n");
     delay_ms(100);
     printf("end\r\n");
     delay_ms(100);
+    // serves to control start character, but also as a packet counter 
     printf("i = i + 1\r\n");
     delay_ms(100);
-    printf("end\r\n");
-    //printf("uart.setup(0, 256000, 8, uart.PARITY_NONE, uart.STOPBITS_1, 1)\r\n");
-    
+    printf("end\r\n");    
 }
 
+// send request to local python server with the contents in message
+// ip address should not be hardcoded, but it was always constant for the local server
+// taken almost directly from a nodemcu github example
 // first part of message needs to be 'tts: ' or 'ra: '
-
 void ESP_request_data(char *message) {
+    // initialize counter in callback function
     printf("i = 0\r\n");
     delay_ms(10);
+    // create a tcp connection
     printf("srv=net.createConnection(net.TCP,0)\r\n");
     delay_ms(10);
+    // setup receive callback
     printf("srv:on(\"receive\", cb_connected)\r\n");
     delay_ms(10);
+    // setup disconnection callback
     printf("srv:on(\"disconnection\", cb_disconnected)\r\n");
     delay_ms(10);
+    // setup connection function
     printf("srv:on(\"connection\",function(sck,c)\r\n");
     delay_ms(10);
+    // only parameters that should change are Host IP address and the message
     printf("sck:send(\"GET %s\\r\\n HTTP /1.1\\r\\nHost: 192.168.43.1\\r\\nConnection: close\\r\\nAccept: */*\\r\\n\\r\\n\")\r\n", message);
     delay_ms(10);
     printf("end)\r\n");
     delay_ms(10);
+    // connect to local host at port 5000
     printf("srv:connect(5000,\"192.168.43.14\")\r\n");
 }
 
@@ -398,15 +393,6 @@ static PT_THREAD (protothread_accel(struct pt *pt))
         psi=atan2( top,bottom );
         psi_deg=psi*57.3;
         if (psi_deg<0){psi_deg+=360;}
-    
-        /*
-        printLine2(0, buffer, ILI9340_BLACK, ILI9340_YELLOW);
-        sprintf(buffer, "heading=%.1f", psi_deg);
-        printLine2(1, buffer, ILI9340_BLACK, ILI9340_YELLOW);
-        sprintf(buffer, "theta=%.1f", theta_deg);
-        printLine2(2, buffer, ILI9340_BLACK, ILI9340_YELLOW);
-        sprintf(buffer, "Z offset=%.1f", Mag_Z_offset);
-        */
         // NEVER exit while
       } // END WHILE(1)
   PT_END(pt);
@@ -416,7 +402,8 @@ static PT_THREAD (protothread_GPS(struct pt *pt))
 {
   PT_BEGIN(pt);
   while (1) {
-    PT_SPAWN(pt, &pt_input, PT_GetSerialBufferGPS(&pt_input));
+      PT_YIELD_TIME_msec(800);
+      PT_SPAWN(pt, &pt_input, PT_GetSerialBufferGPS(&pt_input));
 //    printLine(1, PT_term_buffer_GPS_RMC, ILI9340_WHITE, ILI9340_BLACK);
     // if received sentence is in GPRMC format
     if (GPRMC == 1) {
@@ -425,28 +412,16 @@ static PT_THREAD (protothread_GPS(struct pt *pt))
         if (GPS_fix) {
             if (!prior_fix){
                 // say GPS got a fix
-//                DmaChnSetTxfer(2, (void*) & GPS_got_fix, (void*) & SPI2BUF, sizeof(GPS_got_fix), 2, 2);
+                DmaChnSetTxfer(2, (void*) & GPS_fix, (void*) & SPI2BUF, sizeof(GPS_fix), 2, 2);
+                DmaChnEnable(2);
                 prior_fix = 1;
             }
-            AltAz2RaDec(acc_alt, acc_az, GPS_Lat, GPS_Lon, GPS_time_h, GPS_time_m, GPS_time_s, GPS_month, GPS_day, GPS_year);
-			/*
-			sprintf(buffer, "Date: %d/%d/%d", GPS_month, GPS_day, GPS_year);
-            printLine(1, buffer, ILI9340_WHITE, ILI9340_BLACK);
-            sprintf(buffer, "Time: %d:%d:%d", GPS_time_h, GPS_time_m, GPS_time_s);
-            printLine(2, buffer, ILI9340_WHITE, ILI9340_BLACK);
-            sprintf(buffer, "RA: %.3f", RA);
-            printLine(3, buffer, ILI9340_WHITE, ILI9340_BLACK);
-            sprintf(buffer, "DEC: %.3f", DEC);
-            printLine(4, buffer, ILI9340_WHITE, ILI9340_BLACK);
-            sprintf(buffer, "Lat: %.6f", GPS_Lat);
-            printLine(5, buffer, ILI9340_WHITE, ILI9340_BLACK);
-            sprintf(buffer, "Lon: %.6f", GPS_Lon);
-            printLine(6, buffer, ILI9340_WHITE, ILI9340_BLACK);
-			*/
+            //AltAz2RaDec(theta_correct, psi_deg, GPS_Lat, GPS_Lon, GPS_time_h, GPS_time_m, GPS_time_s, GPS_month, GPS_day, GPS_year);
         } else {
             if (prior_fix){
                 // say GPS lost fix
-//                DmaChnSetTxfer(2, (void*) & GPS_error, (void*) & SPI2BUF, sizeof(GPS_error), 2, 2);
+                DmaChnSetTxfer(2, (void*) & GPS_error, (void*) & SPI2BUF, sizeof(GPS_error), 2, 2);
+                DmaChnEnable(2);
                 prior_fix = 0;
             }
         }
@@ -458,14 +433,14 @@ static PT_THREAD (protothread_GPS(struct pt *pt))
 static PT_THREAD (protothread_WiFi(struct pt *pt))
 {
   PT_BEGIN(pt);
+  int counter;
   // send commands to connect to server and receive speech
-  //ESP_setup();
+  ESP_setup();
   while (1) {
+    // spawn a uart receive thread 
     PT_SPAWN(pt, &pt_input2, PT_GetMachineBuffer(&pt_input2));
-    
-    
-    PT_YIELD_TIME_msec(1000);
-    DmaChnEnable(0);
+    // yield to allow other threads to process
+    PT_YIELD_TIME_msec(50);
   }  
   PT_END(pt);
 } // GPS thread
@@ -481,7 +456,7 @@ static PT_THREAD (protothread_button(struct pt *pt)) {
     // shouldn't this be done in main??
     mPORTBSetPinsDigitalIn(BIT_13);    //Set port as input
     EnablePullDownB(BIT_13);
-    //DmaChnEnable(0);
+    
     while(1) {
       // yield time
       PT_YIELD_TIME_msec(30);
@@ -494,17 +469,17 @@ static PT_THREAD (protothread_button(struct pt *pt)) {
                   state = maybe_pushed;
               }
               break;
-          case maybe_pushed :
+           case maybe_pushed :
               // Potential button press
               if (button) {
                   state = pushed;
-                  if (GPS_fix) {
-//                    AltAz2RaDec(acc_alt, acc_az, GPS_Lat, GPS_Lon, GPS_time_h, GPS_time_m, GPS_time_s, GPS_month, GPS_day, GPS_year); // Get RA and DEC currently viewed
-                  }
-                  else {
+                  //if (GPS_fix) {
+                    AltAz2RaDec(theta_correct, psi_deg, GPS_Lat, GPS_Lon, GPS_time_h, GPS_time_m, GPS_time_s, GPS_month, GPS_day, GPS_year); // Get RA and DEC currently viewed
+                  //}
+                  //else {
 //                      DmaChnSetTxfer(2, (void*) & GPS_error, (void*) & SPI2BUF, sizeof(GPS_error), 2, 2);
                       // no GPS fix, speak
-                  }
+                  //}
               } else {
                   state = released;
               }
@@ -522,9 +497,9 @@ static PT_THREAD (protothread_button(struct pt *pt)) {
                     printf("\r\n");
                     delay_ms(10);
                         delay_ms(10);
-                        //sprintf(buffer, "ra: %f, %f", RA, DEC);
+                        sprintf(buffer, "ra: %f, %f", RA, DEC);
                         //PT_SPAWN(pt, &pt_input2, PT_GetMachineBuffer(&pt_input2));
-                        ESP_request_data("tts: hello, fuck this shit");
+                        ESP_request_data(buffer);
                         
                   //ESP_request_data("tts: you're looking at andromeda, bitch!");
 //                    }
@@ -544,6 +519,7 @@ static PT_THREAD (protothread_button(struct pt *pt)) {
                   state = released;
               }
               break;
+
         } // End switch
         // NEVER exit while
     } // END WHILE(1)
@@ -555,7 +531,7 @@ void main(void) {
   
   // === config threads ==========
     
-  ANSELA = 0; ANSELB = 0;
+    ANSELA = 0; ANSELB = 0;
   PT_setup();
 
   // === setup system wide interrupts  ========
@@ -563,16 +539,35 @@ void main(void) {
 
   // init the threads
   PT_INIT(&pt_gps);
-  //PT_INIT(&pt_WiFi);
+  PT_INIT(&pt_WiFi);
   PT_INIT(&pt_button);
   PT_INIT(&pt_accel);
+
+  // DAC and DMA setup
+  PPSOutput(2, RPB5, SDO2);
+  PPSOutput(4, RPB10, SS2);
+  OpenTimer2(T2_ON | T2_SOURCE_INT | T2_PS_1_1, 7256); // 1814 for 22.05 k
+                                      // Interrupt flag, no ISR
+  SpiChnOpen(SPI_CHANNEL2, SPI_OPEN_ON | SPI_OPEN_MODE16 | SPI_OPEN_MSTEN | SPI_OPEN_CKE_REV | SPICON_FRMEN | SPICON_FRMPOL, 2);
+  // Initializes SPI in framed mode
+  DmaChnOpen(0,0,DMA_OPEN_DEFAULT); // Change default to auto // Auto mode to repeatedly send data
+  DmaChnSetTxfer(0, (void*) & WiFi_Buffer, (void*) & SPI2BUF, sizeof(WiFi_Buffer), 2, 2);
+      // Transfer from DAC_data1 table to SPI2BUF, 256 bytes total, 2 at a time
+  DmaChnSetEventControl(0, DMA_EV_START_IRQ(_TIMER_2_IRQ)); // Timer2 interrupt triggers DMA burst  
   
-  //I2C
-  //OpenI2C1 (I2C_ON, 0x0C2);
-  //IdleI2C1();
+  // set up DMA channel 2 to playback error messages
+  DmaChnOpen(2,0,DMA_OPEN_DEFAULT); // Change default to auto // Auto mode to repeatedly send data
+  DmaChnSetTxfer(2, (void*) & Calibration, (void*) & SPI2BUF, sizeof(Calibration), 2, 2);
+      // Transfer from DAC_data1 table to SPI2BUF, 256 bytes total, 2 at a time
+  DmaChnSetEventControl(2, DMA_EV_START_IRQ(_TIMER_2_IRQ)); // Timer2 interrupt triggers DMA burst  
+  DmaChnEnable(2);  
+  
+    //I2C
+  OpenI2C1 (I2C_ON, 0x0C2);
+  IdleI2C1();
   
   //Set up KMX62
-  //i2c_write (CNTL2_DATA, CNTL2);
+  i2c_write (CNTL2_DATA, CNTL2);
   
   //CALCULATE MAGNETOMETER OFFSET
   int i;
@@ -587,61 +582,13 @@ void main(void) {
       Mag_Z_offset+=(float)(Mag_Z_avg/5000);
   }
   
-  /*
-  // init the display
-  tft_init_hw();
-  tft_begin();
-  tft_fillScreen(ILI9340_BLACK);
-  //240x320 vertical display
-  tft_setRotation(1); // Use tft_setRotation(1) for 320x240
-  */
-  // initialize buffer to be at half DAC output
-//  memset(WiFi_Buffer, 2048, sizeof(WiFi_Buffer));
-  
-  // init buffer with square wave
-//  int i;
-//  for (i = 0; i < max_chars_WiFi; i++) {
-//      if (i % 40 < 5){
-//          WiFi_Buffer[i] = 1800 | DAC_config_chan_A;
-//      }
-//      else {
-//          WiFi_Buffer[i] = 2200 | DAC_config_chan_A;
-//      }
-//  }
-
-  // DAC and DMA setup
-  PPSOutput(2, RPB5, SDO2);
-  PPSOutput(4, RPB10, SS2);
-  OpenTimer2(T2_ON | T2_SOURCE_INT | T2_PS_1_1, 7256); // 1814 for 22.05 k
-                                      // Interrupt flag, no ISR
-  SpiChnOpen(SPI_CHANNEL2, SPI_OPEN_ON | SPI_OPEN_MODE16 | SPI_OPEN_MSTEN | SPI_OPEN_CKE_REV | SPICON_FRMEN | SPICON_FRMPOL, 2);
-  // Initializes SPI in framed mode
-  DmaChnOpen(0,0,DMA_OPEN_DEFAULT); // Change default to auto // Auto mode to repeatedly send data
-  //DmaChnSetEventControl(DMA_CHANNEL0, DMA_EV_START_IRQ_EN|DMA_EV_MATCH_EN);
-  DmaChnSetTxfer(0, (void*) & WiFi_Buffer, (void*) & SPI2BUF, 15000, 2, 2);
-      // Transfer from DAC_data1 table to SPI2BUF, 256 bytes total, 2 at a time
-  // new, not sure if it is right, but should trigger interrupt on end of block
-  //DmaChnSetEvEnableFlags(DMA_CHANNEL0, DMA_EV_BLOCK_DONE);
-  //DmaChnSetMatchPattern(DMA_CHANNEL0, '\a');
-  DmaChnSetEventControl(0, DMA_EV_START_IRQ(_TIMER_2_IRQ)); // Timer2 interrupt triggers DMA burst  
-  //DmaChnEnable(0);
-  /*
-  // set up DMA channel 2 to playback error messages
-  DmaChnOpen(2,2,DMA_OPEN_DEFAULT); // Change default to auto // Auto mode to repeatedly send data
-  DmaChnSetTxfer(2, (void*) & Calibration, (void*) & SPI2BUF, sizeof(Calibration), 2, 2);
-      // Transfer from DAC_data1 table to SPI2BUF, 256 bytes total, 2 at a time
-  DmaChnSetEventControl(2, DMA_EV_START_IRQ(_TIMER_2_IRQ)); // Timer2 interrupt triggers DMA burst  
-  DmaChnEnable(2);
-  */
-  ESP_setup();
-  
   // round-robin scheduler for threads
   while (1){
-//	  PT_SCHEDULE(protothread_accel(&pt_accel));
-//      PT_SCHEDULE(protothread_GPS(&pt_gps));
+      PT_SCHEDULE(protothread_GPS(&pt_gps));
       PT_SCHEDULE(protothread_WiFi(&pt_WiFi));
       PT_SCHEDULE(protothread_button(&pt_button));
-      }
+      PT_SCHEDULE(protothread_accel(&pt_accel));
+  }
   } // main
 
 // === end  ======================================================
