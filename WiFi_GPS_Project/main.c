@@ -488,11 +488,11 @@ static PT_THREAD (protothread_button(struct pt *pt)) {
               // Confirmed button press - button still held
               //ESP_request_data("tts: alec sucks");
               //PT_SPAWN(pt, &pt_input2, PT_GetMachineBuffer(&pt_input2));
-              /*if (!GPS_fix) {
+              if (!GPS_fix) {
                   DmaChnSetTxfer(2, (void*) & GPS_error, (void*) & SPI2BUF, sizeof(GPS_error), 2, 2);
                   DmaChnEnable(2);
                   // no GPS fix, speak
-              } else*/ if (!button) {
+              } else if (!button) {
 //                  printf("sending request\r\n");
                     printf("\r\n");
                     delay_ms(10);
